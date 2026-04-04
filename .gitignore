@@ -1,0 +1,23 @@
+# Build artifacts
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+
+# Rojo sourcemap
+sourcemap.json
+
+# Rokit tool binaries are installed globally, not in-project
+# Wally packages
+Packages/
+ServerPackages/
+DevPackages/
+wally.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
