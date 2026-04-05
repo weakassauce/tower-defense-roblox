@@ -1,14 +1,16 @@
 --!strict
 -- src/server/Map.luau
--- Builds the physical map: ground, grid cells, border walls that wrap
--- around the castle on the east side, vegetation, a dense outer tree
--- ring, and the enemy-path waypoints. Returns the castle position so
--- the server script can build the castle model at the right place.
+-- Builds the realm-agnostic pieces of the arena: ground, grid cells,
+-- border walls (with the east wall wrapping the castle), corner watch
+-- towers, and the enemy-path waypoints. The themed pieces — the enemy
+-- gate (entrance) and the outer surround (trees, ridges, dunes, planets)
+-- — are delegated to MapThemes which dispatches per realm.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = require(ReplicatedStorage.Shared)
 local Config = Shared.Config
 local RealmDefs = Shared.RealmDefs
+local MapThemes = require(script.Parent.MapThemes)
 
 local Map = {}
 
@@ -41,10 +43,9 @@ function Map.build(realmName: string?): MapData
 		existing:Destroy()
 	end
 
-	local palette = RealmDefs.get(realmName or "defense").palette
+	local realm = realmName or "defense"
+	local palette = RealmDefs.get(realm).palette
 
-	-- Local aliases so the existing builder code only differs from the
-	-- original by reading these locals instead of module constants.
 	local COLOR_GROUND = palette.ground
 	local COLOR_GRASS = palette.grass
 	local COLOR_PATH = palette.path
@@ -60,12 +61,14 @@ function Map.build(realmName: string?): MapData
 	--   arenaSize = the playable area (invisible walls are anchored here).
 	--   groundSize = the full mainland, extending well past the walls to
 	--                host the mountain range that surrounds everything.
+	-- The space surround shrinks the ground back down to just the arena
+	-- so the map floats against the skybox.
 	local arenaPadding = 200
-	local arenaSize = Config.GRID_SIZE * Config.CELL_SIZE + arenaPadding -- 328
-	local arenaHalf = arenaSize / 2 -- 164
+	local arenaSize = Config.GRID_SIZE * Config.CELL_SIZE + arenaPadding
+	local arenaHalf = arenaSize / 2
 
 	local mountainPadding = 400
-	local groundSize = arenaSize + mountainPadding -- 728
+	local groundSize = arenaSize + mountainPadding
 	local ground = makePart(mapFolder, "Ground")
 	ground.Size = Vector3.new(groundSize, 2, groundSize)
 	ground.Position = Vector3.new(0, -1, 0)
@@ -183,33 +186,28 @@ function Map.build(realmName: string?): MapData
 	local outerNorthZ = -halfGrid - wallThickness
 	local outerSouthZ = halfGrid + wallThickness
 
-	-- Upper east segment (from outerNorthZ to castleNorthZ at wallEastX)
 	do
 		local length = castleNorthZ - outerNorthZ
 		local centerZ = (outerNorthZ + castleNorthZ) / 2
 		makeWall("WallE_N", wallEastX, centerZ, wallThickness, length)
 	end
 
-	-- Lower east segment (from castleSouthZ to outerSouthZ at wallEastX)
 	do
 		local length = outerSouthZ - castleSouthZ
 		local centerZ = (castleSouthZ + outerSouthZ) / 2
 		makeWall("WallE_S", wallEastX, centerZ, wallThickness, length)
 	end
 
-	-- Castle wrap — north wall from wallEastX out to castleEastX
 	do
 		local length = castleEastX - wallEastX
 		local centerX = (wallEastX + castleEastX) / 2
 		makeWall("WrapN", centerX, castleNorthZ, length, wallThickness)
 	end
-	-- Castle wrap — south wall
 	do
 		local length = castleEastX - wallEastX
 		local centerX = (wallEastX + castleEastX) / 2
 		makeWall("WrapS", centerX, castleSouthZ, length, wallThickness)
 	end
-	-- Castle wrap — outer east wall
 	do
 		local length = castleSouthZ - castleNorthZ + wallThickness
 		makeWall("WrapE", castleEastX, castleCenter.Z, wallThickness, length)
@@ -243,418 +241,21 @@ function Map.build(realmName: string?): MapData
 	makeCornerTower(castleEastX, castleNorthZ)
 	makeCornerTower(castleEastX, castleSouthZ)
 
-	-- --- Enemy gate (drawbridge where goblins emerge) ---
-	do
-		local gate = Instance.new("Folder")
-		gate.Name = "EnemyGate"
-		gate.Parent = mapFolder
+	-- --- Themed pieces (gate + outer surround) ---
+	local themeCtx: MapThemes.ThemeContext = {
+		mapFolder = mapFolder,
+		palette = palette,
+		arenaHalf = arenaHalf,
+		groundHalf = groundHalf,
+		rng = Random.new(20260404),
+		castleCenter = castleCenter,
+		castleHalfW = CASTLE_HALF_W,
+		castleHalfL = CASTLE_HALF_L,
+		ground = ground,
+	}
 
-		local gx = firstWp.X
-		local gz = firstWp.Z
-		local stone = Color3.fromRGB(120, 115, 105)
-		local stoneDark = Color3.fromRGB(76, 72, 65)
-		local wood = Color3.fromRGB(93, 64, 55)
-		local woodDark = Color3.fromRGB(62, 39, 35)
-		local darkOpening = Color3.fromRGB(12, 6, 2)
-
-		local function gatePart(name: string): Part
-			local p = Instance.new("Part")
-			p.Name = name
-			p.Anchored = true
-			p.CanCollide = false
-			p.TopSurface = Enum.SurfaceType.Smooth
-			p.BottomSurface = Enum.SurfaceType.Smooth
-			p.CastShadow = true
-			p.Parent = gate
-			return p
-		end
-
-		-- Stone platform the gate stands on
-		local base = gatePart("Base")
-		base.Size = Vector3.new(14, 1.2, 12)
-		base.Position = Vector3.new(gx - 3, 0.6, gz)
-		base.Color = stoneDark
-		base.Material = Enum.Material.Slate
-
-		-- Two stone pillars flanking the path
-		local pillarL = gatePart("PillarL")
-		pillarL.Size = Vector3.new(3.5, 12, 3.5)
-		pillarL.Position = Vector3.new(gx - 3, 7.2, gz - 4.8)
-		pillarL.Color = stone
-		pillarL.Material = Enum.Material.Brick
-
-		local pillarR = gatePart("PillarR")
-		pillarR.Size = Vector3.new(3.5, 12, 3.5)
-		pillarR.Position = Vector3.new(gx - 3, 7.2, gz + 4.8)
-		pillarR.Color = stone
-		pillarR.Material = Enum.Material.Brick
-
-		-- Arch across the top joining the pillars
-		local arch = gatePart("Arch")
-		arch.Size = Vector3.new(4, 2.4, 11)
-		arch.Position = Vector3.new(gx - 3, 14.4, gz)
-		arch.Color = stoneDark
-		arch.Material = Enum.Material.Brick
-
-		-- Pillar caps
-		local capL = gatePart("CapL")
-		capL.Size = Vector3.new(4.4, 0.8, 4.4)
-		capL.Position = Vector3.new(gx - 3, 15.8, gz - 4.8)
-		capL.Color = stoneDark
-		capL.Material = Enum.Material.Brick
-
-		local capR = gatePart("CapR")
-		capR.Size = Vector3.new(4.4, 0.8, 4.4)
-		capR.Position = Vector3.new(gx - 3, 15.8, gz + 4.8)
-		capR.Color = stoneDark
-		capR.Material = Enum.Material.Brick
-
-		-- Dark cavern opening behind the arch (where enemies emerge)
-		local opening = gatePart("Opening")
-		opening.Size = Vector3.new(0.6, 10, 7)
-		opening.Position = Vector3.new(gx - 5.4, 6.2, gz)
-		opening.Color = darkOpening
-		opening.Material = Enum.Material.SmoothPlastic
-
-		-- Wooden drawbridge planks extending forward (east) from the gate
-		for i = 1, 5 do
-			local plank = gatePart("Plank" .. i)
-			plank.Size = Vector3.new(1.3, 0.35, 8)
-			plank.Position = Vector3.new(gx + (i - 1) * 1.4, 1.4, gz)
-			plank.Color = if i % 2 == 0 then woodDark else wood
-			plank.Material = Enum.Material.Wood
-		end
-
-		-- Iron chains on each side (thin vertical cylinders)
-		local chainL = gatePart("ChainL")
-		chainL.Size = Vector3.new(0.3, 10, 0.3)
-		chainL.Position = Vector3.new(gx + 5, 7, gz - 4.4)
-		chainL.Color = Color3.fromRGB(55, 52, 48)
-		chainL.Material = Enum.Material.Metal
-
-		local chainR = gatePart("ChainR")
-		chainR.Size = Vector3.new(0.3, 10, 0.3)
-		chainR.Position = Vector3.new(gx + 5, 7, gz + 4.4)
-		chainR.Color = Color3.fromRGB(55, 52, 48)
-		chainR.Material = Enum.Material.Metal
-
-		-- A small red banner hanging from the arch for flavor
-		local banner = gatePart("Banner")
-		banner.Size = Vector3.new(0.2, 2.8, 2.2)
-		banner.Position = Vector3.new(gx - 2.6, 12, gz)
-		banner.Color = Color3.fromRGB(120, 30, 30)
-		banner.Material = Enum.Material.Fabric
-	end
-
-	-- --- Vegetation ---
-	local vegetation = Instance.new("Folder")
-	vegetation.Name = "Vegetation"
-	vegetation.Parent = mapFolder
-
-	local vegRng = Random.new(20260404)
-	local innerEdge = halfGrid + 6
-	-- The tree ring stays anchored to the arena edge, not the full ground
-	local ringInnerEdge = arenaHalf - 30 -- beginning of the dense outer ring
-	local outerEdge = arenaHalf - 8 -- outer cap for all vegetation
-
-	-- Returns true if (x,z) falls inside the castle wrap area so we can
-	-- skip vegetation there.
-	local function insideCastleArea(x: number, z: number): boolean
-		local dx = math.abs(x - castleCenter.X)
-		local dz = math.abs(z - castleCenter.Z)
-		return dx <= CASTLE_HALF_W + 3 and dz <= CASTLE_HALF_L + 3
-	end
-
-	-- Picks a point between the grid walls and the inner edge of the tree
-	-- ring. Rejects (retries) up to 8 times if the point lands in the
-	-- castle area.
-	local function randomMidPoint(): (number, number)
-		for _ = 1, 8 do
-			local side = vegRng:NextInteger(1, 4)
-			local along = vegRng:NextNumber(-ringInnerEdge, ringInnerEdge)
-			local perp = vegRng:NextNumber(innerEdge, ringInnerEdge)
-			local x, z
-			if side == 1 then
-				x, z = along, -perp
-			elseif side == 2 then
-				x, z = along, perp
-			elseif side == 3 then
-				x, z = -perp, along
-			else
-				x, z = perp, along
-			end
-			if not insideCastleArea(x, z) then
-				return x, z
-			end
-		end
-		-- Fallback: some far corner
-		return ringInnerEdge - 5, ringInnerEdge - 5
-	end
-
-	-- Picks a point inside the dense outer ring (near the ground edge)
-	local function randomRingPoint(): (number, number)
-		local side = vegRng:NextInteger(1, 4)
-		local along = vegRng:NextNumber(-outerEdge, outerEdge)
-		local perp = vegRng:NextNumber(ringInnerEdge, outerEdge)
-		if side == 1 then
-			return along, -perp
-		elseif side == 2 then
-			return along, perp
-		elseif side == 3 then
-			return -perp, along
-		else
-			return perp, along
-		end
-	end
-
-	local TRUNK_COLOR = palette.trunk
-	local CANOPY_COLORS = palette.canopy
-	local BUSH_COLORS = palette.canopy
-	local ROCK_COLORS = { palette.rock, palette.rockDark, palette.wallDark }
-
-	local function spawnTree(i: number, x: number, z: number, scale: number)
-		local trunk = makePart(vegetation, "Trunk_" .. i)
-		trunk.Size = Vector3.new(1.2 * scale, 7 * scale, 1.2 * scale)
-		trunk.Position = Vector3.new(x, 3.5 * scale, z)
-		trunk.Color = TRUNK_COLOR
-		trunk.Material = Enum.Material.Wood
-		trunk.CanCollide = false
-
-		local canopy = makePart(vegetation, "Canopy_" .. i)
-		canopy.Shape = Enum.PartType.Ball
-		canopy.Size = Vector3.new(6 * scale, 6 * scale, 6 * scale)
-		canopy.Position = Vector3.new(x, 8.5 * scale, z)
-		canopy.Color = CANOPY_COLORS[vegRng:NextInteger(1, #CANOPY_COLORS)]
-		canopy.Material = palette.canopyMaterial
-		canopy.CanCollide = false
-	end
-
-	-- Scattered trees in the mid-zone (between walls and outer ring)
-	for i = 1, 70 do
-		local tx, tz = randomMidPoint()
-		local scale = 0.85 + vegRng:NextNumber() * 0.7
-		spawnTree(i, tx, tz, scale)
-	end
-
-	-- Bushes in the mid-zone
-	for i = 1, 50 do
-		local bx, bz = randomMidPoint()
-		local s = 1.5 + vegRng:NextNumber() * 1.3
-		local bush = makePart(vegetation, "Bush_" .. i)
-		bush.Shape = Enum.PartType.Ball
-		bush.Size = Vector3.new(s * 1.5, s, s * 1.5)
-		bush.Position = Vector3.new(bx, s * 0.4, bz)
-		bush.Color = BUSH_COLORS[vegRng:NextInteger(1, #BUSH_COLORS)]
-		bush.Material = palette.canopyMaterial
-		bush.CanCollide = false
-	end
-
-	-- Rocks in the mid-zone
-	for i = 1, 35 do
-		local rx, rz = randomMidPoint()
-		local sx = 1.4 + vegRng:NextNumber() * 2
-		local sy = 0.8 + vegRng:NextNumber() * 1.2
-		local sz = 1.4 + vegRng:NextNumber() * 2
-		local rock = makePart(vegetation, "Rock_" .. i)
-		rock.Size = Vector3.new(sx, sy, sz)
-		rock.CFrame = CFrame.new(rx, sy * 0.5, rz)
-			* CFrame.Angles(0, vegRng:NextNumber() * math.pi * 2, 0)
-		rock.Color = ROCK_COLORS[vegRng:NextInteger(1, #ROCK_COLORS)]
-		rock.Material = palette.rockMaterial
-		rock.CanCollide = false
-	end
-
-	-- --- Dense outer tree ring (visual barrier hiding the ground edge) ---
-	-- Large trees packed close together near the arena edges, forming a
-	-- forest wall between the arena and the mountains.
-	for i = 1, 240 do
-		local tx, tz = randomRingPoint()
-		local scale = 1.4 + vegRng:NextNumber() * 0.9
-		spawnTree(1000 + i, tx, tz, scale)
-	end
-
-	-- --- Jagged ridge rocks around the arena edge ---
-	-- A dense band of randomly rotated, varied-height rock pillars that
-	-- starts right at the tree ring and grows taller as it extends outward,
-	-- forming a jagged rocky foothill profile with visible ridges and peaks.
-	local ridges = Instance.new("Folder")
-	ridges.Name = "Ridges"
-	ridges.Parent = mapFolder
-
-	local ridgeInnerR = arenaHalf - 8 -- flush with the outer tree ring
-	local ridgeOuterR = arenaHalf + 92
-	local ridgeDepth = ridgeOuterR - ridgeInnerR
-
-	local RIDGE_COLORS = palette.ridge
-
-	-- Picks a point inside the jagged ridge band. Returns x, z, and t in
-	-- [0, 1] indicating how far along the band (0 = inner / near arena,
-	-- 1 = outer). The t value is used to gradient the pillar heights.
-	local function randomRidgePoint(): (number, number, number)
-		local side = vegRng:NextInteger(1, 4)
-		local along = vegRng:NextNumber(-(arenaHalf + 70), arenaHalf + 70)
-		local t = vegRng:NextNumber()
-		local perp = ridgeInnerR + t * ridgeDepth
-		if side == 1 then
-			return along, -perp, t
-		elseif side == 2 then
-			return along, perp, t
-		elseif side == 3 then
-			return -perp, along, t
-		else
-			return perp, along, t
-		end
-	end
-
-	-- WedgeParts give each ridge a flat triangular slope face instead of
-	-- the flat top a Block has, so the silhouette feels rocky rather than
-	-- column-like.
-	local function makeWedge(name: string): WedgePart
-		local w = Instance.new("WedgePart")
-		w.Name = name
-		w.Anchored = true
-		w.CanCollide = false
-		w.CastShadow = true
-		w.TopSurface = Enum.SurfaceType.Smooth
-		w.BottomSurface = Enum.SurfaceType.Smooth
-		w.Parent = ridges
-		return w
-	end
-
-	for i = 1, 700 do
-		local rx, rz, t = randomRidgePoint()
-
-		-- Height grows from ~6 at the inner edge to ~90 at the outer edge,
-		-- plus a big random jitter to create ridges and valleys.
-		local heightBase = 6 + t * 85
-		local heightJitter = vegRng:NextNumber() * 55
-		local height = heightBase + heightJitter -- range ~6 to ~145
-
-		local width = 6 + vegRng:NextNumber() * 14
-		local depth = 6 + vegRng:NextNumber() * 14
-		local yaw = vegRng:NextNumber() * math.pi * 2
-		local tiltX = (vegRng:NextNumber() - 0.5) * 0.35
-		local tiltZ = (vegRng:NextNumber() - 0.5) * 0.35
-
-		local wedge = makeWedge("Ridge_" .. i)
-		wedge.Size = Vector3.new(width, height, depth)
-		wedge.CFrame = CFrame.new(rx, height / 2 - 2, rz) * CFrame.Angles(tiltX, yaw, tiltZ)
-		wedge.Color = RIDGE_COLORS[vegRng:NextInteger(1, #RIDGE_COLORS)]
-		wedge.Material = palette.rockMaterial
-	end
-
-	-- A second pass of wedges flipped vertically so the slopes fan in
-	-- the opposite direction, filling valleys between the upward ones.
-	for i = 1, 300 do
-		local rx, rz, t = randomRidgePoint()
-
-		local heightBase = 10 + t * 60
-		local heightJitter = vegRng:NextNumber() * 40
-		local height = heightBase + heightJitter
-
-		local width = 6 + vegRng:NextNumber() * 14
-		local depth = 6 + vegRng:NextNumber() * 14
-		local yaw = vegRng:NextNumber() * math.pi * 2
-
-		local wedge = makeWedge("RidgeFlip_" .. i)
-		wedge.Size = Vector3.new(width, height, depth)
-		-- Rotate 180° around the X axis so the slope face points the
-		-- opposite way (pointy end at the bottom, flat top).
-		wedge.CFrame = CFrame.new(rx, height / 2 - 2, rz)
-			* CFrame.Angles(math.pi, 0, 0)
-			* CFrame.Angles(0, yaw, 0)
-		wedge.Color = RIDGE_COLORS[vegRng:NextInteger(1, #RIDGE_COLORS)]
-		wedge.Material = palette.rockMaterial
-	end
-
-	-- --- Mountain range (outside the invisible walls) ---
-	-- Tall stepped stone peaks placed in a band between the arena tree
-	-- ring and the far ground edge. Still sitting on the main ground
-	-- plate so they look connected to the mainland.
-	local mountains = Instance.new("Folder")
-	mountains.Name = "Mountains"
-	mountains.Parent = mapFolder
-
-	-- Mountains start well beyond the ridge band so the two zones don't overlap
-	local mountainInnerEdge = arenaHalf + 110
-	local mountainOuterEdge = groundHalf - 25
-
-	local function randomMountainPoint(): (number, number)
-		local side = vegRng:NextInteger(1, 4)
-		local along = vegRng:NextNumber(-(groundHalf - 15), groundHalf - 15)
-		local perp = vegRng:NextNumber(mountainInnerEdge, mountainOuterEdge)
-		if side == 1 then
-			return along, -perp
-		elseif side == 2 then
-			return along, perp
-		elseif side == 3 then
-			return -perp, along
-		else
-			return perp, along
-		end
-	end
-
-	local ROCK_LIGHT = palette.mountainMid
-	local ROCK_MID = palette.mountainMid
-	local ROCK_DARK = palette.mountainBase
-	local SNOW = palette.mountainPeak
-
-	local function buildMountain(i: number, mx: number, mz: number)
-		local baseW = 24 + vegRng:NextNumber() * 24 -- 24-48
-		local baseH = 22 + vegRng:NextNumber() * 20 -- 22-42
-		local midW = baseW * (0.55 + vegRng:NextNumber() * 0.15)
-		local midH = 18 + vegRng:NextNumber() * 18 -- 18-36
-		local peakW = midW * (0.45 + vegRng:NextNumber() * 0.2)
-		local peakH = 10 + vegRng:NextNumber() * 16 -- 10-26
-		local yaw = vegRng:NextNumber() * math.pi * 2
-
-		-- Base (wide foot, partially sunken so it reads as "growing" from ground)
-		local base = makePart(mountains, "MntBase_" .. i)
-		base.Size = Vector3.new(baseW, baseH, baseW)
-		base.CFrame = CFrame.new(mx, baseH / 2 - 2, mz) * CFrame.Angles(0, yaw, 0)
-		base.Color = ROCK_DARK
-		base.Material = palette.rockMaterial
-		base.CanCollide = false
-
-		-- Middle slab
-		local offX = (vegRng:NextNumber() - 0.5) * baseW * 0.15
-		local offZ = (vegRng:NextNumber() - 0.5) * baseW * 0.15
-		local mid = makePart(mountains, "MntMid_" .. i)
-		mid.Size = Vector3.new(midW, midH, midW)
-		mid.CFrame = CFrame.new(mx + offX, baseH + midH / 2 - 2, mz + offZ)
-			* CFrame.Angles(0, yaw + 0.35, 0)
-		mid.Color = ROCK_MID
-		mid.Material = palette.rockMaterial
-		mid.CanCollide = false
-
-		-- Upper ledge
-		local upperW = midW * 0.7
-		local upperH = 10 + vegRng:NextNumber() * 12
-		local upper = makePart(mountains, "MntUpper_" .. i)
-		upper.Size = Vector3.new(upperW, upperH, upperW)
-		upper.CFrame = CFrame.new(mx + offX * 0.6, baseH + midH + upperH / 2 - 2, mz + offZ * 0.6)
-			* CFrame.Angles(0, yaw + 0.7, 0)
-		upper.Color = ROCK_LIGHT
-		upper.Material = palette.rockMaterial
-		upper.CanCollide = false
-
-		-- Peak (snow, sand, neon, etc. depending on realm)
-		local peak = makePart(mountains, "MntPeak_" .. i)
-		peak.Size = Vector3.new(peakW, peakH, peakW)
-		peak.CFrame = CFrame.new(
-			mx + offX * 0.3,
-			baseH + midH + upperH + peakH / 2 - 2,
-			mz + offZ * 0.3
-		) * CFrame.Angles(0, yaw + 1.1, 0)
-		peak.Color = SNOW
-		peak.Material = palette.mountainPeakMaterial
-		peak.CanCollide = false
-	end
-
-	for i = 1, 48 do
-		local mx, mz = randomMountainPoint()
-		buildMountain(i, mx, mz)
-	end
+	MapThemes.buildGate(realm, themeCtx, firstWp)
+	MapThemes.buildSurround(realm, themeCtx)
 
 	return {
 		folder = mapFolder,
