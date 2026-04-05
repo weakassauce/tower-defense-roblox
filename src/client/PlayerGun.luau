@@ -92,6 +92,38 @@ local function decoratePistol(handle: Part)
 		Enum.Material.Metal
 	)
 	weldTo(handle, guard, CFrame.new(0, 0.15, -0.2))
+	-- Magazine in the grip
+	local magazine = makePart(
+		"Mag",
+		Vector3.new(0.28, 0.4, 0.22),
+		Color3.fromRGB(28, 28, 34),
+		Enum.Material.Metal
+	)
+	weldTo(handle, magazine, CFrame.new(0, -0.5, -0.05))
+	-- Front sight blade
+	local frontSight = makePart(
+		"FrontSight",
+		Vector3.new(0.06, 0.16, 0.12),
+		Color3.fromRGB(20, 20, 24),
+		Enum.Material.Metal
+	)
+	weldTo(handle, frontSight, CFrame.new(0, 0.84, -0.92))
+	-- Rear sight notch
+	local rearSight = makePart(
+		"RearSight",
+		Vector3.new(0.28, 0.14, 0.1),
+		Color3.fromRGB(20, 20, 24),
+		Enum.Material.Metal
+	)
+	weldTo(handle, rearSight, CFrame.new(0, 0.84, 0.18))
+	-- Trigger
+	local trigger = makePart(
+		"Trigger",
+		Vector3.new(0.06, 0.18, 0.08),
+		Color3.fromRGB(30, 30, 36),
+		Enum.Material.Metal
+	)
+	weldTo(handle, trigger, CFrame.new(0, 0.24, -0.1))
 end
 
 local function buildRifle(): Part
@@ -146,6 +178,34 @@ local function decorateRifle(handle: Part)
 		Enum.Material.Neon
 	)
 	weldTo(handle, scopeLens, CFrame.new(0, 0.95, -0.55))
+	-- Magazine slotted under the receiver
+	local magazine =
+		makePart("Mag", Vector3.new(0.3, 0.7, 0.5), Color3.fromRGB(28, 28, 34), Enum.Material.Metal)
+	weldTo(handle, magazine, CFrame.new(0, -0.05, -0.4))
+	-- Front sight post above the muzzle
+	local frontSight = makePart(
+		"FrontSight",
+		Vector3.new(0.06, 0.2, 0.1),
+		Color3.fromRGB(20, 20, 24),
+		Enum.Material.Metal
+	)
+	weldTo(handle, frontSight, CFrame.new(0, 0.78, -3))
+	-- Foregrip handle under the barrel
+	local foregrip = makePart(
+		"Foregrip",
+		Vector3.new(0.14, 0.45, 0.3),
+		Color3.fromRGB(42, 28, 16),
+		Enum.Material.Wood
+	)
+	weldTo(handle, foregrip, CFrame.new(0, 0.25, -1.6))
+	-- Charging handle sticking out of the receiver
+	local chargeHandle = makePart(
+		"ChargeHandle",
+		Vector3.new(0.12, 0.12, 0.4),
+		Color3.fromRGB(80, 80, 90),
+		Enum.Material.Metal
+	)
+	weldTo(handle, chargeHandle, CFrame.new(0.3, 0.7, 0.15))
 end
 
 local function buildShotgun(): Part
@@ -201,6 +261,22 @@ local function decorateShotgun(handle: Part)
 		Enum.Material.Wood
 	)
 	weldTo(handle, stock, CFrame.new(0, 0.55, 0.75))
+	-- Front bead sight on the top barrel
+	local bead = makePart(
+		"Bead",
+		Vector3.new(0.08, 0.1, 0.1),
+		Color3.fromRGB(180, 150, 60),
+		Enum.Material.Metal
+	)
+	weldTo(handle, bead, CFrame.new(0, 0.88, -2.3))
+	-- Pump action rails along the under-barrel
+	local rail = makePart(
+		"Rail",
+		Vector3.new(0.1, 0.1, 1.6),
+		Color3.fromRGB(30, 30, 36),
+		Enum.Material.Metal
+	)
+	weldTo(handle, rail, CFrame.new(0, 0.2, -1.35))
 end
 
 local function buildSniper(): Part
@@ -276,6 +352,30 @@ local function decorateSniper(handle: Part)
 		Enum.Material.Metal
 	)
 	weldTo(handle, bipodR, CFrame.new(0.2, 0.2, -2.2) * CFrame.Angles(0, 0, math.rad(20)))
+	-- Bolt handle sticking out of the receiver
+	local bolt = makePart(
+		"Bolt",
+		Vector3.new(0.16, 0.16, 0.4),
+		Color3.fromRGB(80, 80, 90),
+		Enum.Material.Metal
+	)
+	weldTo(handle, bolt, CFrame.new(0.35, 0.78, 0.2))
+	-- Long detachable magazine
+	local magazine = makePart(
+		"Mag",
+		Vector3.new(0.3, 0.55, 0.6),
+		Color3.fromRGB(28, 28, 34),
+		Enum.Material.Metal
+	)
+	weldTo(handle, magazine, CFrame.new(0, 0.05, -0.2))
+	-- Muzzle brake vent slot
+	local brake = makePart(
+		"BrakeVent",
+		Vector3.new(0.08, 0.36, 0.2),
+		Color3.fromRGB(18, 18, 22),
+		Enum.Material.Metal
+	)
+	weldTo(handle, brake, CFrame.new(0, 0.65, -4.55))
 end
 
 local function buildPlasma(): Part
@@ -346,6 +446,24 @@ local function decoratePlasma(handle: Part)
 	)
 	finR.Transparency = 0.3
 	weldTo(handle, finR, CFrame.new(0.45, 0.65, -1))
+	-- Glowing energy vents along the top of the chassis
+	for i = 0, 2 do
+		local vent = makePart(
+			"Vent_" .. i,
+			Vector3.new(0.35, 0.08, 0.18),
+			Color3.fromRGB(140, 200, 255),
+			Enum.Material.Neon
+		)
+		weldTo(handle, vent, CFrame.new(0, 1.02, -0.1 - i * 0.4))
+	end
+	-- Muzzle iris (decorative ring around the neon core)
+	local iris = makePart(
+		"MuzzleIris",
+		Vector3.new(0.55, 0.55, 0.12),
+		Color3.fromRGB(60, 70, 110),
+		Enum.Material.Metal
+	)
+	weldTo(handle, iris, CFrame.new(0, 0.65, -2.98))
 end
 
 local GUN_BUILDERS: { [string]: { build: () -> Part, decorate: (Part) -> () } } = {

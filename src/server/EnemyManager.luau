@@ -542,6 +542,56 @@ local function applyFlourish(model: Model, config: EnemyConfig, barY: number)
 	end
 end
 
+-- Attaches a subtle realm-themed particle aura to the enemy so each
+-- realm has a distinct visual read at a glance: frost puffs cold mist,
+-- desert trails sand, forest drops leaves, space leaks neon voidstuff.
+-- Defense uses no aura so the baseline look stays clean.
+local function applyRealmAura(config: EnemyConfig, body: Part)
+	if config.realm == "defense" then
+		return
+	end
+
+	local attachment = Instance.new("Attachment")
+	attachment.Name = "AuraAttachment"
+	attachment.Parent = body
+
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Name = "RealmAura"
+	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	emitter.LightEmission = 0.5
+	emitter.Lifetime = NumberRange.new(0.7, 1.4)
+	emitter.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.35),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	emitter.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.25),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	emitter.Speed = NumberRange.new(0.4, 1.4)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.Rotation = NumberRange.new(-180, 180)
+	emitter.Rate = 16
+
+	if config.realm == "frost" then
+		emitter.Color = ColorSequence.new(Color3.fromRGB(200, 230, 255))
+		emitter.Rate = 22
+		emitter.Lifetime = NumberRange.new(0.8, 1.6)
+	elseif config.realm == "desert" then
+		emitter.Color = ColorSequence.new(Color3.fromRGB(220, 180, 110))
+		emitter.Rate = 18
+	elseif config.realm == "forest" then
+		emitter.Color = ColorSequence.new(Color3.fromRGB(150, 220, 100))
+		emitter.Rate = 14
+	elseif config.realm == "space" then
+		emitter.Color = ColorSequence.new(Color3.fromRGB(200, 130, 255))
+		emitter.Rate = 26
+		emitter.LightEmission = 1
+	end
+
+	emitter.Parent = attachment
+end
+
 -- Builds a composite enemy model. Returns (model, rootPart, barY) where
 -- rootPart is the primary body used for positioning/HP bar attachment,
 -- and barY is the local Y distance from the body to the HP bar.
@@ -560,6 +610,7 @@ local function buildEnemyModel(config: EnemyConfig): (Model, Part, number)
 	end
 
 	applyFlourish(model, config, barY)
+	applyRealmAura(config, body)
 	return model, body, barY
 end
 
