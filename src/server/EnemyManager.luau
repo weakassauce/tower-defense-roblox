@@ -47,6 +47,9 @@ local waypoints: { Vector3 } = {}
 local enemyFolder: Folder? = nil
 
 -- --- Model builders ---
+-- All enemy models are built with their "front" features (eyes, snout,
+-- club) at local -Z, because the movement code uses CFrame.lookAt which
+-- aligns local -Z with the travel direction.
 
 local function makePart(
 	name: string,
@@ -69,197 +72,375 @@ local function makePart(
 	return p
 end
 
--- Builds a composite enemy model. Returns (model, rootPart) where rootPart
--- is the primary body used for positioning and HP bar attachment.
-local function buildEnemyModel(config: EnemyConfig): (Model, Part)
-	local model = Instance.new("Model")
-	model.Name = "Enemy_" .. config.enemyType
-
-	local scale = config.scale
-
-	if config.enemyType == "scout" then
-		-- Wolf-like: elongated body + pointy ears + glowing eyes
-		local body = makePart(
-			"Body",
-			Vector3.new(5.5, 2.8, 3.4) * scale,
-			config.color,
-			Enum.Material.SmoothPlastic
-		)
-		body.Parent = model
-
-		local head = makePart(
-			"Head",
-			Vector3.new(2.4, 2.2, 2.4) * scale,
-			config.color,
-			Enum.Material.SmoothPlastic
-		)
-		head.CFrame = CFrame.new(2.6 * scale, 1.2 * scale, 0)
-		head.Parent = model
-
-		local earL = makePart(
-			"EarL",
-			Vector3.new(0.6, 1.2, 0.6) * scale,
-			Color3.fromRGB(245, 127, 23),
-			Enum.Material.SmoothPlastic
-		)
-		earL.CFrame = CFrame.new(2.8 * scale, 2.5 * scale, -0.7 * scale)
-		earL.Parent = model
-		local earR = makePart(
-			"EarR",
-			Vector3.new(0.6, 1.2, 0.6) * scale,
-			Color3.fromRGB(245, 127, 23),
-			Enum.Material.SmoothPlastic
-		)
-		earR.CFrame = CFrame.new(2.8 * scale, 2.5 * scale, 0.7 * scale)
-		earR.Parent = model
-
-		local eyeL = makePart(
-			"EyeL",
-			Vector3.new(0.4, 0.4, 0.4) * scale,
-			Color3.fromRGB(255, 235, 59),
-			Enum.Material.Neon,
-			Enum.PartType.Ball
-		)
-		eyeL.CFrame = CFrame.new(3.6 * scale, 1.4 * scale, -0.7 * scale)
-		eyeL.Parent = model
-		local eyeR = makePart(
-			"EyeR",
-			Vector3.new(0.4, 0.4, 0.4) * scale,
-			Color3.fromRGB(255, 235, 59),
-			Enum.Material.Neon,
-			Enum.PartType.Ball
-		)
-		eyeR.CFrame = CFrame.new(3.6 * scale, 1.4 * scale, 0.7 * scale)
-		eyeR.Parent = model
-
-		model.PrimaryPart = body
-		return model, body
-	elseif config.enemyType == "troll" then
-		-- Big chunky body + darker head + horns + red eyes
-		local body = makePart(
-			"Body",
-			Vector3.new(5.6, 6.5, 5.4) * scale,
-			config.color,
-			Enum.Material.SmoothPlastic,
-			Enum.PartType.Ball
-		)
-		body.Parent = model
-
-		local head = makePart(
-			"Head",
-			Vector3.new(3.4, 3, 3.4) * scale,
-			Color3.fromRGB(74, 20, 140),
-			Enum.Material.SmoothPlastic,
-			Enum.PartType.Ball
-		)
-		head.CFrame = CFrame.new(0, 4.8 * scale, 0)
-		head.Parent = model
-
-		local hornL = makePart(
-			"HornL",
-			Vector3.new(0.6, 2.4, 0.6) * scale,
-			Color3.fromRGB(33, 33, 33),
-			Enum.Material.SmoothPlastic
-		)
-		hornL.CFrame = CFrame.new(-1.2 * scale, 6.2 * scale, 0) * CFrame.Angles(0, 0, math.rad(-18))
-		hornL.Parent = model
-		local hornR = makePart(
-			"HornR",
-			Vector3.new(0.6, 2.4, 0.6) * scale,
-			Color3.fromRGB(33, 33, 33),
-			Enum.Material.SmoothPlastic
-		)
-		hornR.CFrame = CFrame.new(1.2 * scale, 6.2 * scale, 0) * CFrame.Angles(0, 0, math.rad(18))
-		hornR.Parent = model
-
-		local eyeL = makePart(
-			"EyeL",
-			Vector3.new(0.55, 0.55, 0.55) * scale,
-			Color3.fromRGB(255, 82, 82),
-			Enum.Material.Neon,
-			Enum.PartType.Ball
-		)
-		eyeL.CFrame = CFrame.new(-0.9 * scale, 4.9 * scale, 1.5 * scale)
-		eyeL.Parent = model
-		local eyeR = makePart(
-			"EyeR",
-			Vector3.new(0.55, 0.55, 0.55) * scale,
-			Color3.fromRGB(255, 82, 82),
-			Enum.Material.Neon,
-			Enum.PartType.Ball
-		)
-		eyeR.CFrame = CFrame.new(0.9 * scale, 4.9 * scale, 1.5 * scale)
-		eyeR.Parent = model
-
-		model.PrimaryPart = body
-		return model, body
-	else
-		-- Goblin (default): green body + smaller head + pointy ears + red eyes
-		local body = makePart(
-			"Body",
-			Vector3.new(4, 4.2, 4) * scale,
-			config.color,
-			Enum.Material.SmoothPlastic,
-			Enum.PartType.Ball
-		)
-		body.Parent = model
-
-		local head = makePart(
-			"Head",
-			Vector3.new(2.6, 2.6, 2.6) * scale,
-			Color3.fromRGB(51, 105, 30),
-			Enum.Material.SmoothPlastic,
-			Enum.PartType.Ball
-		)
-		head.CFrame = CFrame.new(0, 3.4 * scale, 0)
-		head.Parent = model
-
-		local earL = makePart(
-			"EarL",
-			Vector3.new(0.6, 1.4, 0.6) * scale,
-			Color3.fromRGB(51, 105, 30),
-			Enum.Material.SmoothPlastic
-		)
-		earL.CFrame = CFrame.new(-1.6 * scale, 4 * scale, 0) * CFrame.Angles(0, 0, math.rad(-35))
-		earL.Parent = model
-		local earR = makePart(
-			"EarR",
-			Vector3.new(0.6, 1.4, 0.6) * scale,
-			Color3.fromRGB(51, 105, 30),
-			Enum.Material.SmoothPlastic
-		)
-		earR.CFrame = CFrame.new(1.6 * scale, 4 * scale, 0) * CFrame.Angles(0, 0, math.rad(35))
-		earR.Parent = model
-
-		local eyeL = makePart(
-			"EyeL",
-			Vector3.new(0.4, 0.4, 0.4) * scale,
-			Color3.fromRGB(255, 23, 68),
-			Enum.Material.Neon,
-			Enum.PartType.Ball
-		)
-		eyeL.CFrame = CFrame.new(-0.7 * scale, 3.5 * scale, 1.1 * scale)
-		eyeL.Parent = model
-		local eyeR = makePart(
-			"EyeR",
-			Vector3.new(0.4, 0.4, 0.4) * scale,
-			Color3.fromRGB(255, 23, 68),
-			Enum.Material.Neon,
-			Enum.PartType.Ball
-		)
-		eyeR.CFrame = CFrame.new(0.7 * scale, 3.5 * scale, 1.1 * scale)
-		eyeR.Parent = model
-
-		model.PrimaryPart = body
-		return model, body
+local function attachAll(parts: { BasePart }, model: Model)
+	for _, p in parts do
+		p.Parent = model
 	end
 end
 
-local function buildHpBar(parent: Part, maxHp: number): (Frame, TextLabel)
+local function buildGoblin(model: Model, config: EnemyConfig): (Part, number)
+	local s = config.scale
+	local bodyGreen = config.color
+	local darkGreen = Color3.fromRGB(51, 105, 30)
+	local darkerGreen = Color3.fromRGB(27, 64, 15)
+	local skin = Color3.fromRGB(120, 170, 80)
+	local wood = Color3.fromRGB(84, 55, 36)
+	local cloth = Color3.fromRGB(62, 39, 35)
+	local eyeRed = Color3.fromRGB(255, 23, 68)
+
+	-- Body (green ball)
+	local body = makePart(
+		"Body",
+		Vector3.new(4, 4.2, 4) * s,
+		bodyGreen,
+		Enum.Material.SmoothPlastic,
+		Enum.PartType.Ball
+	)
+
+	-- Head
+	local head = makePart(
+		"Head",
+		Vector3.new(2.6, 2.6, 2.6) * s,
+		darkGreen,
+		Enum.Material.SmoothPlastic,
+		Enum.PartType.Ball
+	)
+	head.CFrame = CFrame.new(0, 3.4 * s, 0)
+
+	-- Pointy ears
+	local earL =
+		makePart("EarL", Vector3.new(0.6, 1.6, 0.6) * s, darkGreen, Enum.Material.SmoothPlastic)
+	earL.CFrame = CFrame.new(-1.5 * s, 4.1 * s, 0) * CFrame.Angles(0, 0, math.rad(-45))
+	local earR =
+		makePart("EarR", Vector3.new(0.6, 1.6, 0.6) * s, darkGreen, Enum.Material.SmoothPlastic)
+	earR.CFrame = CFrame.new(1.5 * s, 4.1 * s, 0) * CFrame.Angles(0, 0, math.rad(45))
+
+	-- Glowing red eyes at the front (-Z)
+	local eyeL = makePart(
+		"EyeL",
+		Vector3.new(0.42, 0.42, 0.42) * s,
+		eyeRed,
+		Enum.Material.Neon,
+		Enum.PartType.Ball
+	)
+	eyeL.CFrame = CFrame.new(-0.6 * s, 3.55 * s, -1.15 * s)
+	local eyeR = makePart(
+		"EyeR",
+		Vector3.new(0.42, 0.42, 0.42) * s,
+		eyeRed,
+		Enum.Material.Neon,
+		Enum.PartType.Ball
+	)
+	eyeR.CFrame = CFrame.new(0.6 * s, 3.55 * s, -1.15 * s)
+
+	-- Nose
+	local nose = makePart(
+		"Nose",
+		Vector3.new(0.5, 0.5, 0.5) * s,
+		skin,
+		Enum.Material.SmoothPlastic,
+		Enum.PartType.Ball
+	)
+	nose.CFrame = CFrame.new(0, 3.1 * s, -1.35 * s)
+
+	-- Arms (hanging down from the shoulders)
+	local armL =
+		makePart("ArmL", Vector3.new(0.8, 2.6, 0.8) * s, bodyGreen, Enum.Material.SmoothPlastic)
+	armL.CFrame = CFrame.new(-2.2 * s, 0.2 * s, 0) * CFrame.Angles(0, 0, math.rad(10))
+	local armR =
+		makePart("ArmR", Vector3.new(0.8, 2.6, 0.8) * s, bodyGreen, Enum.Material.SmoothPlastic)
+	armR.CFrame = CFrame.new(2.2 * s, 0.2 * s, 0) * CFrame.Angles(0, 0, math.rad(-10))
+
+	-- Legs
+	local legL =
+		makePart("LegL", Vector3.new(1.0, 2.2, 1.0) * s, darkerGreen, Enum.Material.SmoothPlastic)
+	legL.CFrame = CFrame.new(-0.9 * s, -2.9 * s, 0)
+	local legR =
+		makePart("LegR", Vector3.new(1.0, 2.2, 1.0) * s, darkerGreen, Enum.Material.SmoothPlastic)
+	legR.CFrame = CFrame.new(0.9 * s, -2.9 * s, 0)
+
+	-- Loincloth around the hips
+	local cloth1 =
+		makePart("Loincloth", Vector3.new(3.2, 1.3, 3.2) * s, cloth, Enum.Material.Fabric)
+	cloth1.CFrame = CFrame.new(0, -1.8 * s, 0)
+
+	-- Wooden club in right hand
+	local club = makePart("Club", Vector3.new(0.7, 3.0, 0.7) * s, wood, Enum.Material.Wood)
+	club.CFrame = CFrame.new(2.4 * s, -0.5 * s, -0.6 * s)
+		* CFrame.Angles(math.rad(15), 0, math.rad(-25))
+	local clubHead = makePart(
+		"ClubHead",
+		Vector3.new(1.2, 1.0, 1.2) * s,
+		Color3.fromRGB(115, 80, 55),
+		Enum.Material.Wood
+	)
+	clubHead.CFrame = CFrame.new(2.9 * s, 0.7 * s, -0.8 * s) * CFrame.Angles(0, 0, math.rad(-25))
+
+	attachAll(
+		{ body, head, earL, earR, eyeL, eyeR, nose, armL, armR, legL, legR, cloth1, club, clubHead },
+		model
+	)
+	model.PrimaryPart = body
+	return body, 5.8 * s
+end
+
+local function buildScout(model: Model, config: EnemyConfig): (Part, number)
+	local s = config.scale
+	local bodyYellow = config.color
+	local darkYellow = Color3.fromRGB(245, 127, 23)
+	local darker = Color3.fromRGB(150, 70, 10)
+	local eyeYellow = Color3.fromRGB(255, 235, 59)
+
+	-- Body is elongated along the -Z forward axis
+	local body =
+		makePart("Body", Vector3.new(3.4, 2.6, 6.0) * s, bodyYellow, Enum.Material.SmoothPlastic)
+
+	-- Head in front (-Z direction)
+	local head = makePart(
+		"Head",
+		Vector3.new(2.4, 2.2, 2.4) * s,
+		darkYellow,
+		Enum.Material.SmoothPlastic,
+		Enum.PartType.Ball
+	)
+	head.CFrame = CFrame.new(0, 0.7 * s, -3.0 * s)
+
+	-- Snout (pointy block forward of the head)
+	local snout =
+		makePart("Snout", Vector3.new(1.4, 1.0, 1.6) * s, darker, Enum.Material.SmoothPlastic)
+	snout.CFrame = CFrame.new(0, 0.2 * s, -4.1 * s)
+
+	-- Ears
+	local earL =
+		makePart("EarL", Vector3.new(0.6, 1.3, 0.6) * s, darker, Enum.Material.SmoothPlastic)
+	earL.CFrame = CFrame.new(-0.8 * s, 2.1 * s, -2.8 * s) * CFrame.Angles(0, 0, math.rad(-15))
+	local earR =
+		makePart("EarR", Vector3.new(0.6, 1.3, 0.6) * s, darker, Enum.Material.SmoothPlastic)
+	earR.CFrame = CFrame.new(0.8 * s, 2.1 * s, -2.8 * s) * CFrame.Angles(0, 0, math.rad(15))
+
+	-- Glowing yellow eyes
+	local eyeL = makePart(
+		"EyeL",
+		Vector3.new(0.4, 0.4, 0.4) * s,
+		eyeYellow,
+		Enum.Material.Neon,
+		Enum.PartType.Ball
+	)
+	eyeL.CFrame = CFrame.new(-0.6 * s, 1.1 * s, -3.7 * s)
+	local eyeR = makePart(
+		"EyeR",
+		Vector3.new(0.4, 0.4, 0.4) * s,
+		eyeYellow,
+		Enum.Material.Neon,
+		Enum.PartType.Ball
+	)
+	eyeR.CFrame = CFrame.new(0.6 * s, 1.1 * s, -3.7 * s)
+
+	-- Tail (tilted up-back at +Z)
+	local tail =
+		makePart("Tail", Vector3.new(0.6, 0.6, 3.2) * s, bodyYellow, Enum.Material.SmoothPlastic)
+	tail.CFrame = CFrame.new(0, 1.0 * s, 3.5 * s) * CFrame.Angles(math.rad(-25), 0, 0)
+
+	-- 4 legs
+	local legGeo = Vector3.new(0.7, 2.2, 0.7) * s
+	local legs = {
+		{ name = "LegFL", pos = Vector3.new(-1.3, -2.1, -1.8) },
+		{ name = "LegFR", pos = Vector3.new(1.3, -2.1, -1.8) },
+		{ name = "LegBL", pos = Vector3.new(-1.3, -2.1, 2.0) },
+		{ name = "LegBR", pos = Vector3.new(1.3, -2.1, 2.0) },
+	}
+	local legParts = {}
+	for _, info in legs do
+		local leg = makePart(info.name, legGeo, darker, Enum.Material.SmoothPlastic)
+		leg.CFrame = CFrame.new(info.pos * s)
+		table.insert(legParts, leg)
+	end
+
+	-- 3 dark mane spikes along the back
+	local spike1 =
+		makePart("Spike1", Vector3.new(0.5, 1.2, 0.5) * s, darker, Enum.Material.SmoothPlastic)
+	spike1.CFrame = CFrame.new(0, 1.9 * s, -1.2 * s) * CFrame.Angles(math.rad(-10), 0, 0)
+	local spike2 =
+		makePart("Spike2", Vector3.new(0.5, 1.0, 0.5) * s, darker, Enum.Material.SmoothPlastic)
+	spike2.CFrame = CFrame.new(0, 1.9 * s, 0)
+	local spike3 =
+		makePart("Spike3", Vector3.new(0.5, 0.9, 0.5) * s, darker, Enum.Material.SmoothPlastic)
+	spike3.CFrame = CFrame.new(0, 1.85 * s, 1.2 * s) * CFrame.Angles(math.rad(10), 0, 0)
+
+	local allParts = { body, head, snout, earL, earR, eyeL, eyeR, tail, spike1, spike2, spike3 }
+	for _, leg in legParts do
+		table.insert(allParts, leg)
+	end
+	attachAll(allParts, model)
+	model.PrimaryPart = body
+	return body, 3.8 * s
+end
+
+local function buildTroll(model: Model, config: EnemyConfig): (Part, number)
+	local s = config.scale
+	local bodyPurple = config.color
+	local darkPurple = Color3.fromRGB(74, 20, 140)
+	local darkerPurple = Color3.fromRGB(40, 10, 80)
+	local horn = Color3.fromRGB(33, 33, 33)
+	local tusk = Color3.fromRGB(240, 230, 210)
+	local wood = Color3.fromRGB(78, 52, 36)
+	local stone = Color3.fromRGB(120, 115, 105)
+	local cloth = Color3.fromRGB(62, 39, 35)
+	local eyeRed = Color3.fromRGB(255, 82, 82)
+
+	-- Main body
+	local body = makePart(
+		"Body",
+		Vector3.new(5.6, 6.5, 5.4) * s,
+		bodyPurple,
+		Enum.Material.SmoothPlastic,
+		Enum.PartType.Ball
+	)
+
+	-- Head
+	local head = makePart(
+		"Head",
+		Vector3.new(3.4, 3.0, 3.4) * s,
+		darkPurple,
+		Enum.Material.SmoothPlastic,
+		Enum.PartType.Ball
+	)
+	head.CFrame = CFrame.new(0, 4.8 * s, 0)
+
+	-- Horns
+	local hornL =
+		makePart("HornL", Vector3.new(0.7, 2.8, 0.7) * s, horn, Enum.Material.SmoothPlastic)
+	hornL.CFrame = CFrame.new(-1.3 * s, 6.5 * s, 0) * CFrame.Angles(0, 0, math.rad(-20))
+	local hornR =
+		makePart("HornR", Vector3.new(0.7, 2.8, 0.7) * s, horn, Enum.Material.SmoothPlastic)
+	hornR.CFrame = CFrame.new(1.3 * s, 6.5 * s, 0) * CFrame.Angles(0, 0, math.rad(20))
+
+	-- Eyes (front, -Z)
+	local eyeL = makePart(
+		"EyeL",
+		Vector3.new(0.6, 0.6, 0.6) * s,
+		eyeRed,
+		Enum.Material.Neon,
+		Enum.PartType.Ball
+	)
+	eyeL.CFrame = CFrame.new(-0.9 * s, 4.9 * s, -1.55 * s)
+	local eyeR = makePart(
+		"EyeR",
+		Vector3.new(0.6, 0.6, 0.6) * s,
+		eyeRed,
+		Enum.Material.Neon,
+		Enum.PartType.Ball
+	)
+	eyeR.CFrame = CFrame.new(0.9 * s, 4.9 * s, -1.55 * s)
+
+	-- Tusks jutting from lower jaw
+	local tuskL =
+		makePart("TuskL", Vector3.new(0.35, 0.9, 0.35) * s, tusk, Enum.Material.SmoothPlastic)
+	tuskL.CFrame = CFrame.new(-0.5 * s, 4.0 * s, -1.65 * s) * CFrame.Angles(math.rad(-15), 0, 0)
+	local tuskR =
+		makePart("TuskR", Vector3.new(0.35, 0.9, 0.35) * s, tusk, Enum.Material.SmoothPlastic)
+	tuskR.CFrame = CFrame.new(0.5 * s, 4.0 * s, -1.65 * s) * CFrame.Angles(math.rad(-15), 0, 0)
+
+	-- Shoulder bulges
+	local shL = makePart(
+		"ShoulderL",
+		Vector3.new(2.4, 2.4, 2.4) * s,
+		bodyPurple,
+		Enum.Material.SmoothPlastic,
+		Enum.PartType.Ball
+	)
+	shL.CFrame = CFrame.new(-2.8 * s, 2.4 * s, 0)
+	local shR = makePart(
+		"ShoulderR",
+		Vector3.new(2.4, 2.4, 2.4) * s,
+		bodyPurple,
+		Enum.Material.SmoothPlastic,
+		Enum.PartType.Ball
+	)
+	shR.CFrame = CFrame.new(2.8 * s, 2.4 * s, 0)
+
+	-- Thick arms
+	local armL =
+		makePart("ArmL", Vector3.new(1.7, 4.2, 1.7) * s, darkPurple, Enum.Material.SmoothPlastic)
+	armL.CFrame = CFrame.new(-2.8 * s, -0.4 * s, 0)
+	local armR =
+		makePart("ArmR", Vector3.new(1.7, 4.2, 1.7) * s, darkPurple, Enum.Material.SmoothPlastic)
+	armR.CFrame = CFrame.new(2.8 * s, -0.4 * s, 0)
+
+	-- Legs
+	local legL =
+		makePart("LegL", Vector3.new(2.0, 3.8, 2.0) * s, darkerPurple, Enum.Material.SmoothPlastic)
+	legL.CFrame = CFrame.new(-1.5 * s, -4.8 * s, 0)
+	local legR =
+		makePart("LegR", Vector3.new(2.0, 3.8, 2.0) * s, darkerPurple, Enum.Material.SmoothPlastic)
+	legR.CFrame = CFrame.new(1.5 * s, -4.8 * s, 0)
+
+	-- Loincloth
+	local cloth1 =
+		makePart("Loincloth", Vector3.new(4.2, 1.8, 4.2) * s, cloth, Enum.Material.Fabric)
+	cloth1.CFrame = CFrame.new(0, -3.4 * s, 0)
+
+	-- Stone club gripped in the right hand, tilted back
+	local clubShaft =
+		makePart("ClubShaft", Vector3.new(0.9, 5.5, 0.9) * s, wood, Enum.Material.Wood)
+	clubShaft.CFrame = CFrame.new(3.9 * s, -0.6 * s, -0.9 * s)
+		* CFrame.Angles(math.rad(20), 0, math.rad(-15))
+	local clubHead = makePart(
+		"ClubHead",
+		Vector3.new(2.0, 2.0, 2.0) * s,
+		stone,
+		Enum.Material.Slate,
+		Enum.PartType.Ball
+	)
+	clubHead.CFrame = CFrame.new(4.6 * s, 1.8 * s, -1.7 * s)
+
+	attachAll({
+		body,
+		head,
+		hornL,
+		hornR,
+		eyeL,
+		eyeR,
+		tuskL,
+		tuskR,
+		shL,
+		shR,
+		armL,
+		armR,
+		legL,
+		legR,
+		cloth1,
+		clubShaft,
+		clubHead,
+	}, model)
+	model.PrimaryPart = body
+	return body, 9.0 * s
+end
+
+-- Builds a composite enemy model. Returns (model, rootPart, barY) where
+-- rootPart is the primary body used for positioning/HP bar attachment,
+-- and barY is the local Y distance from the body to the HP bar.
+local function buildEnemyModel(config: EnemyConfig): (Model, Part, number)
+	local model = Instance.new("Model")
+	model.Name = "Enemy_" .. config.enemyType
+
+	if config.enemyType == "scout" then
+		local body, barY = buildScout(model, config)
+		return model, body, barY
+	elseif config.enemyType == "troll" then
+		local body, barY = buildTroll(model, config)
+		return model, body, barY
+	else
+		local body, barY = buildGoblin(model, config)
+		return model, body, barY
+	end
+end
+
+local function buildHpBar(parent: Part, maxHp: number, barY: number): (Frame, TextLabel)
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "HpBar"
 	billboard.Size = UDim2.fromOffset(130, 36)
-	billboard.StudsOffset = Vector3.new(0, parent.Size.Y * 0.6 + 2.5, 0)
+	billboard.StudsOffset = Vector3.new(0, barY + 2.5, 0)
 	billboard.AlwaysOnTop = true
 	billboard.LightInfluence = 0
 	billboard.Parent = parent
@@ -335,8 +516,8 @@ function EnemyManager.spawn(config: EnemyConfig): Enemy
 	assert(#waypoints > 0, "EnemyManager.init(waypoints) must be called first")
 	assert(enemyFolder, "enemyFolder not initialized")
 
-	local model, body = buildEnemyModel(config)
-	local hpFill, hpText = buildHpBar(body, config.hp)
+	local model, body, barY = buildEnemyModel(config)
+	local hpFill, hpText = buildHpBar(body, config.hp, barY)
 
 	local startPos = waypoints[1]
 	model:PivotTo(CFrame.new(startPos))
