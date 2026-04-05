@@ -212,8 +212,17 @@ local RealmDefs: { [string]: RealmDef } = {
 	defense = {
 		name = "defense",
 		displayName = "Realm Defense",
-		signatureTowers = { "paladin", "thunder_knight", "chapel_archer" },
+		-- The first realm is strictly the 5 universal base towers;
+		-- signature / theme towers only unlock from the frost realm on.
+		signatureTowers = {},
 		path = PATH_DEFENSE,
+		-- costMultiplier scales BOTH tower placement cost AND per-kill
+		-- gold rewards in that realm. Later realms charge much more for
+		-- towers, but also pay out much more per kill so the player can
+		-- grind earlier realms to fund the next tier. Curve is a clean
+		-- 3x-per-realm geometric progression (1, 3, 9, 27, 81) so each
+		-- new realm is a distinct economic tier — by space you're
+		-- paying 81x the base tower cost but also earning 81x per kill.
 		costMultiplier = 1,
 		unlockRequirement = nil,
 		palette = {
@@ -290,8 +299,8 @@ local RealmDefs: { [string]: RealmDef } = {
 		displayName = "Frost Kingdom",
 		signatureTowers = { "icelance", "blizzard_mage", "ice_cannon" },
 		path = PATH_FROST,
-		costMultiplier = 1.4,
-		unlockRequirement = { realm = "defense", wave = 10 },
+		costMultiplier = 3,
+		unlockRequirement = { realm = "defense", wave = 12 },
 		palette = {
 			ground = Color3.fromRGB(220, 230, 240),
 			grass = Color3.fromRGB(240, 248, 255),
@@ -366,7 +375,7 @@ local RealmDefs: { [string]: RealmDef } = {
 		displayName = "Desert Wastes",
 		signatureTowers = { "sandstorm", "sun_archer", "pyre_mage" },
 		path = PATH_DESERT,
-		costMultiplier = 1.8,
+		costMultiplier = 9,
 		unlockRequirement = { realm = "frost", wave = 15 },
 		palette = {
 			ground = Color3.fromRGB(214, 175, 106),
@@ -442,8 +451,8 @@ local RealmDefs: { [string]: RealmDef } = {
 		displayName = "Dark Forest",
 		signatureTowers = { "thornwall", "grove_archer", "venom_cloud" },
 		path = PATH_FOREST,
-		costMultiplier = 2.3,
-		unlockRequirement = { realm = "desert", wave = 15 },
+		costMultiplier = 27,
+		unlockRequirement = { realm = "desert", wave = 17 },
 		palette = {
 			ground = Color3.fromRGB(32, 54, 30),
 			grass = Color3.fromRGB(44, 90, 42),
@@ -518,8 +527,8 @@ local RealmDefs: { [string]: RealmDef } = {
 		displayName = "Void Frontier",
 		signatureTowers = { "plasma", "void_cannon", "tesla_storm" },
 		path = PATH_SPACE,
-		costMultiplier = 3,
-		unlockRequirement = { realm = "forest", wave = 15 },
+		costMultiplier = 81,
+		unlockRequirement = { realm = "forest", wave = 18 },
 		palette = {
 			ground = Color3.fromRGB(40, 30, 55),
 			grass = Color3.fromRGB(70, 50, 95),

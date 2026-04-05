@@ -11,14 +11,21 @@
 --   Castle.flashDamage()                -- brief red flash on a hit
 --   Castle.explode()                    -- physics blow-apart on loss
 
+-- Castle used to stash module-level refs (hpFill, bodyParts, etc.) for
+-- the one-and-only castle. The multiplayer refactor moved all of that
+-- into a returned context object so each player's arena can own its
+-- own castle. Castle.build(...) returns a CastleContext handle; every
+-- other public function now takes that handle explicitly.
 local Castle = {}
 
-local castleFolder: Folder? = nil
-local castleCenter: Vector3 = Vector3.new(0, 0, 0)
-local hpFill: Frame? = nil
-local hpText: TextLabel? = nil
-local bodyParts: { Part } = {}
-local originalColors: { [Part]: Color3 } = {}
+export type CastleContext = {
+	folder: Folder,
+	center: Vector3,
+	hpFill: Frame?,
+	hpText: TextLabel?,
+	bodyParts: { Part },
+	originalColors: { [Part]: Color3 },
+}
 
 type CastleTheme = {
 	stone: Color3,
@@ -130,10 +137,19 @@ local function makeBlock(
 	return p
 end
 
+-- Scratch tables used by track() during a single Castle.build call.
+-- build() resets them on entry and captures them into the returned
+-- CastleContext on exit; outside of a build call they're empty. Kept
+-- at module scope so the merlonRing / buildFlair helpers can call
+-- track() without threading a context parameter through every signature.
+-- Safe because Castle.build() is atomic (never yields).
+local scratchBodyParts: { Part } = {}
+local scratchOriginalColors: { [Part]: Color3 } = {}
+
 local function track(part: Part)
 	-- Tint-flashable parts: collected so flashDamage can swap them together
-	table.insert(bodyParts, part)
-	originalColors[part] = part.Color
+	table.insert(scratchBodyParts, part)
+	scratchOriginalColors[part] = part.Color
 end
 
 -- Thin decorative "arrow slit" — a dark rectangle embedded on a wall face
@@ -412,28 +428,37 @@ end
 -- Builds the castle centered at `pos` (Vector3 in world space). Returns
 -- the list of extra waypoints that extend the enemy path into the castle
 -- interior (so enemies visually walk into the gate before dying).
-function Castle.build(pos: Vector3, maxHp: number, realmName: string?): { Vector3 }
+-- Build a castle at world-space `pos` parented under `parentFolder`.
+-- Returns a CastleContext handle holding refs the caller needs later
+-- (HP bar widgets for updateHp, body parts for flashDamage, etc). Was
+-- a singleton before the multiplayer refactor — now every call produces
+-- a fresh context and nothing lives at module scope across calls. The
+-- second return value is the list of extra waypoints that extend the
+-- enemy path into the castle gate.
+function Castle.build(
+	pos: Vector3,
+	maxHp: number,
+	realmName: string?,
+	parentFolder: Instance
+): (CastleContext, { Vector3 })
 	local theme = CASTLE_THEMES[realmName or "defense"] or CASTLE_THEMES.defense
 	local STONE = theme.stone
 	local STONE_DARK = theme.stoneDark
 	local ROOF = theme.roof
 
-	-- Fresh folder each time
-	local existing = workspace:FindFirstChild("Castle")
-	if existing then
-		existing:Destroy()
-	end
+	-- Reset the scratch tables track() writes into, then a fresh folder
+	-- parented under the arena container. Previous code used
+	-- workspace.Castle as a shared singleton; now every player's arena
+	-- holds its own Castle folder under its arena root.
+	scratchBodyParts = {}
+	scratchOriginalColors = {}
 
-	castleFolder = Instance.new("Folder")
-	castleFolder.Name = "Castle"
-	castleFolder.Parent = workspace
-	castleCenter = pos
-	bodyParts = {}
-	originalColors = {}
+	local folder = Instance.new("Folder")
+	folder.Name = "Castle"
+	folder.Parent = parentFolder
 
 	local cx = pos.X
 	local cz = pos.Z
-	local folder = castleFolder
 
 	-- --- Stone platform with merlon ring ---
 	local base = makeBlock(
@@ -690,7 +715,6 @@ function Castle.build(pos: Vector3, maxHp: number, realmName: string?): { Vector
 	text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	text.TextStrokeTransparency = 0
 	text.Parent = billboard
-	hpText = text
 
 	local barBg = Instance.new("Frame")
 	barBg.Name = "BarBg"
@@ -717,17 +741,32 @@ function Castle.build(pos: Vector3, maxHp: number, realmName: string?): { Vector
 	local fillCorner = Instance.new("UICorner")
 	fillCorner.CornerRadius = UDim.new(0, 6)
 	fillCorner.Parent = fill
-	hpFill = fill
+
+	-- Capture the scratch tables into the returned context so the
+	-- next Castle.build call can overwrite them safely.
+	local ctx: CastleContext = {
+		folder = folder,
+		center = pos,
+		hpFill = fill,
+		hpText = text,
+		bodyParts = scratchBodyParts,
+		originalColors = scratchOriginalColors,
+	}
+	scratchBodyParts = {}
+	scratchOriginalColors = {}
 
 	-- Return extra waypoints so enemies walk into the gate and a step
 	-- inside before dying
-	return {
+	local extraWaypoints = {
 		Vector3.new(cx - 10, 2, cz),
 		Vector3.new(cx - 3, 2, cz),
 	}
+	return ctx, extraWaypoints
 end
 
-function Castle.updateHp(current: number, max: number)
+function Castle.updateHp(ctx: CastleContext, current: number, max: number)
+	local hpFill = ctx.hpFill
+	local hpText = ctx.hpText
 	if not hpFill or not hpText then
 		return
 	end
@@ -744,7 +783,9 @@ function Castle.updateHp(current: number, max: number)
 	end
 end
 
-function Castle.flashDamage()
+function Castle.flashDamage(ctx: CastleContext)
+	local bodyParts = ctx.bodyParts
+	local originalColors = ctx.originalColors
 	if #bodyParts == 0 then
 		return
 	end
@@ -762,13 +803,13 @@ end
 -- Unanchors every castle part and launches it outward/upward so the
 -- castle physically blows apart when the player loses. The folder is
 -- destroyed after a short delay so the pieces can fall and settle.
-function Castle.explode()
-	local folder = castleFolder
-	if not folder then
+function Castle.explode(ctx: CastleContext)
+	local folder = ctx.folder
+	if not folder or not folder.Parent then
 		return
 	end
 
-	local center = castleCenter
+	local center = ctx.center
 	for _, child in folder:GetDescendants() do
 		if child:IsA("BasePart") then
 			local dx = child.Position.X - center.X
@@ -799,16 +840,13 @@ function Castle.explode()
 	end
 
 	-- Clear refs since the pieces are now owned by physics
-	hpFill = nil
-	hpText = nil
-	bodyParts = {}
+	ctx.hpFill = nil
+	ctx.hpText = nil
+	ctx.bodyParts = {}
 
 	task.delay(5, function()
 		if folder and folder.Parent then
 			folder:Destroy()
-		end
-		if castleFolder == folder then
-			castleFolder = nil
 		end
 	end)
 end

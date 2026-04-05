@@ -1242,6 +1242,87 @@ local function buildSurroundDesert(ctx: ThemeContext)
 		mesa.Color = palette.mountainBase
 		mesa.Material = Enum.Material.Sandstone
 	end
+
+	-- --- Boulder wall around the arena edge ---
+	-- Large sandstone cubes stacked in a dense ring so the player's view
+	-- over the arena rim is fully blocked. Three layered rows at varying
+	-- heights sell it as a craggy stone barrier instead of a flat wall.
+	local boulders = Instance.new("Folder")
+	boulders.Name = "Boulders"
+	boulders.Parent = ctx.mapFolder
+
+	local function randomPointInRing(inner: number, outer: number): (number, number)
+		local side = rng:NextInteger(1, 4)
+		local along = rng:NextNumber(-(arenaHalf + 32), arenaHalf + 32)
+		local perp = inner + rng:NextNumber() * (outer - inner)
+		if side == 1 then
+			return along, -perp
+		elseif side == 2 then
+			return along, perp
+		elseif side == 3 then
+			return -perp, along
+		else
+			return perp, along
+		end
+	end
+
+	-- Inner front row: big cubic blocks flush against the arena edge.
+	-- Character eye level sits around y=5 so the minimum height here is
+	-- 14 studs, guaranteeing the horizon is hidden.
+	for i = 1, 320 do
+		local side = 14 + rng:NextNumber() * 10 -- 14-24
+		local jx = 0.9 + rng:NextNumber() * 0.2
+		local jy = 0.9 + rng:NextNumber() * 0.35
+		local jz = 0.9 + rng:NextNumber() * 0.2
+		local bx, bz = randomPointInRing(arenaHalf - 4, arenaHalf + 14)
+		local boulder = makePart(boulders, "BoulderFront_" .. i)
+		boulder.Size = Vector3.new(side * jx, side * jy, side * jz)
+		boulder.CFrame = CFrame.new(bx, (side * jy) * 0.5 - 1.5, bz)
+			* CFrame.Angles(
+				(rng:NextNumber() - 0.5) * 0.15,
+				rng:NextNumber() * math.pi * 2,
+				(rng:NextNumber() - 0.5) * 0.15
+			)
+		boulder.Color = if rng:NextNumber() > 0.5 then palette.rockDark else palette.rock
+		boulder.Material = Enum.Material.Sandstone
+	end
+
+	-- Middle row: even taller blocks behind the front row filling any
+	-- gaps and adding silhouette depth.
+	for i = 1, 260 do
+		local side = 18 + rng:NextNumber() * 14 -- 18-32
+		local jx = 0.9 + rng:NextNumber() * 0.25
+		local jy = 0.9 + rng:NextNumber() * 0.4
+		local jz = 0.9 + rng:NextNumber() * 0.25
+		local bx, bz = randomPointInRing(arenaHalf + 10, arenaHalf + 30)
+		local boulder = makePart(boulders, "BoulderMid_" .. i)
+		boulder.Size = Vector3.new(side * jx, side * jy, side * jz)
+		boulder.CFrame = CFrame.new(bx, (side * jy) * 0.5 - 2, bz)
+			* CFrame.Angles(
+				(rng:NextNumber() - 0.5) * 0.15,
+				rng:NextNumber() * math.pi * 2,
+				(rng:NextNumber() - 0.5) * 0.15
+			)
+		boulder.Color = palette.mountainBase
+		boulder.Material = Enum.Material.Sandstone
+	end
+
+	-- Back row: smaller chipped boulders just beyond the wall for a
+	-- natural scatter so the barrier doesn't end in a hard line.
+	for i = 1, 180 do
+		local side = 6 + rng:NextNumber() * 8 -- 6-14
+		local bx, bz = randomPointInRing(arenaHalf + 28, arenaHalf + 50)
+		local chip = makePart(boulders, "BoulderBack_" .. i)
+		chip.Size = Vector3.new(side, side * (0.7 + rng:NextNumber() * 0.5), side)
+		chip.CFrame = CFrame.new(bx, (side * 0.5) - 1.5, bz)
+			* CFrame.Angles(
+				(rng:NextNumber() - 0.5) * 0.2,
+				rng:NextNumber() * math.pi * 2,
+				(rng:NextNumber() - 0.5) * 0.2
+			)
+		chip.Color = palette.rockDark
+		chip.Material = Enum.Material.Sandstone
+	end
 end
 
 -- Forest: replace the entire outer zone with a wall of tall dense trees
@@ -1354,205 +1435,12 @@ local function buildSurroundForest(ctx: ThemeContext)
 	end
 end
 
--- Space: no outer mountains, no tree ring, no ridges. The arena reads
--- as a floating asteroid in the void with distant planets and a few
--- drifting moonrocks. The outer ground is hidden so the player sees the
--- skybox at the edge.
+-- Space: delegates to the defense surround so space uses the original
+-- vegetation / ridges / mountains layout with the space palette applied.
+-- Only the enemy gate is custom (buildGateSpace); everything else around
+-- the arena matches the reference look from before the MapThemes refactor.
 local function buildSurroundSpace(ctx: ThemeContext)
-	local palette = ctx.palette
-	local rng = ctx.rng
-	local arenaHalf = ctx.arenaHalf
-	local innerEdge = 64 + 6
-	local ringInnerEdge = arenaHalf - 30
-
-	-- Hide the outer ground padding so only the arena shows. The ground
-	-- part was sized as arena+mountainPadding in Map.luau; we shrink it
-	-- here to just the arena footprint so the map "floats".
-	local arenaFootprint = arenaHalf * 2
-	ctx.ground.Size = Vector3.new(arenaFootprint, 2, arenaFootprint)
-	ctx.ground.Color = Color3.fromRGB(55, 48, 80)
-	ctx.ground.Material = Enum.Material.Slate
-
-	-- Crater detail on the ground (overlay bumps so it feels moonlike)
-	local craters = Instance.new("Folder")
-	craters.Name = "Craters"
-	craters.Parent = ctx.mapFolder
-	for i = 1, 40 do
-		local cx, cz = randomMidPoint(ctx, innerEdge, ringInnerEdge)
-		local s = 1.8 + rng:NextNumber() * 3.5
-		local crater = makePart(craters, "Crater_" .. i)
-		crater.Shape = Enum.PartType.Cylinder
-		crater.Size = Vector3.new(0.4, s, s)
-		crater.CFrame = CFrame.new(cx, 0.1, cz) * CFrame.Angles(0, 0, math.rad(90))
-		crater.Color = Color3.fromRGB(30, 25, 55)
-		crater.Material = Enum.Material.Slate
-	end
-
-	-- Moonrocks sparsely scattered on the surface
-	for i = 1, 20 do
-		local rx, rz = randomMidPoint(ctx, innerEdge, ringInnerEdge)
-		local sx = 1.6 + rng:NextNumber() * 2.4
-		local sy = 1 + rng:NextNumber() * 1.6
-		local sz = 1.6 + rng:NextNumber() * 2.4
-		local rock = makePart(craters, "Moonrock_" .. i)
-		rock.Shape = Enum.PartType.Ball
-		rock.Size = Vector3.new(sx, sy, sz)
-		rock.CFrame = CFrame.new(rx, sy * 0.5, rz)
-			* CFrame.Angles(0, rng:NextNumber() * math.pi * 2, 0)
-		rock.Color = palette.rock
-		rock.Material = Enum.Material.Slate
-	end
-
-	-- Jagged asteroid edge falling away from the arena — WedgeParts
-	-- pointing down to sell the "broken rock" look at the map rim.
-	local edge = Instance.new("Folder")
-	edge.Name = "AsteroidEdge"
-	edge.Parent = ctx.mapFolder
-
-	for i = 1, 80 do
-		local angle = (i / 80) * math.pi * 2 + rng:NextNumber() * 0.04
-		local r = arenaHalf + rng:NextNumber() * 6
-		local ex = math.cos(angle) * r
-		local ez = math.sin(angle) * r
-		local height = 6 + rng:NextNumber() * 14
-		local width = 4 + rng:NextNumber() * 5
-		local depth = 4 + rng:NextNumber() * 5
-		local chunk = makeWedge(edge, "EdgeChunk_" .. i)
-		chunk.Size = Vector3.new(width, height, depth)
-		chunk.CFrame = CFrame.new(ex, -height / 2 - 1, ez)
-			* CFrame.Angles(math.pi, angle + math.rad(90), 0)
-		chunk.Color = palette.rockDark
-		chunk.Material = Enum.Material.Slate
-	end
-
-	-- --- Distant planets floating in the sky ---
-	-- Placed far from the arena center and high in the sky so they read
-	-- as astral bodies rather than set dressing the player can reach.
-	local planets = Instance.new("Folder")
-	planets.Name = "Planets"
-	planets.Parent = ctx.mapFolder
-
-	type PlanetSpec = {
-		name: string,
-		color: Color3,
-		material: Enum.Material,
-		size: number,
-		pos: Vector3,
-		hasRing: boolean,
-		ringColor: Color3?,
-		glow: number,
-	}
-
-	local PLANETS: { PlanetSpec } = {
-		{
-			name = "GasGiant",
-			color = Color3.fromRGB(210, 155, 85),
-			material = Enum.Material.Sand,
-			size = 340,
-			pos = Vector3.new(-1200, 420, -1100),
-			hasRing = true,
-			ringColor = Color3.fromRGB(230, 200, 150),
-			glow = 0,
-		},
-		{
-			name = "RedPlanet",
-			color = Color3.fromRGB(180, 70, 50),
-			material = Enum.Material.Slate,
-			size = 220,
-			pos = Vector3.new(1400, 320, -900),
-			hasRing = false,
-			ringColor = nil,
-			glow = 0,
-		},
-		{
-			name = "IceMoon",
-			color = Color3.fromRGB(200, 230, 255),
-			material = Enum.Material.Ice,
-			size = 140,
-			pos = Vector3.new(900, 280, 1300),
-			hasRing = false,
-			ringColor = nil,
-			glow = 0,
-		},
-		{
-			name = "VoidOrb",
-			color = Color3.fromRGB(160, 90, 240),
-			material = Enum.Material.Neon,
-			size = 110,
-			pos = Vector3.new(-1100, 240, 1200),
-			hasRing = false,
-			ringColor = nil,
-			glow = 3,
-		},
-		{
-			name = "DistantSun",
-			color = Color3.fromRGB(255, 220, 140),
-			material = Enum.Material.Neon,
-			size = 180,
-			pos = Vector3.new(-200, 520, -1600),
-			hasRing = false,
-			ringColor = nil,
-			glow = 5,
-		},
-	}
-
-	for _, spec in PLANETS do
-		local body = makePart(planets, spec.name)
-		body.Shape = Enum.PartType.Ball
-		body.Size = Vector3.new(spec.size, spec.size, spec.size)
-		body.Position = spec.pos
-		body.Color = spec.color
-		body.Material = spec.material
-		body.CastShadow = false
-		if spec.glow > 0 then
-			local light = Instance.new("PointLight")
-			light.Color = spec.color
-			light.Range = 60
-			light.Brightness = spec.glow
-			light.Parent = body
-		end
-
-		if spec.hasRing and spec.ringColor then
-			local ringDiameter = spec.size * 1.9
-			local ring = makePart(planets, spec.name .. "_Ring")
-			ring.Shape = Enum.PartType.Cylinder
-			ring.Size = Vector3.new(2, ringDiameter, ringDiameter)
-			ring.CFrame = CFrame.new(spec.pos)
-				* CFrame.Angles(0, math.rad(30), math.rad(20))
-				* CFrame.Angles(0, 0, math.rad(90))
-			ring.Color = spec.ringColor
-			ring.Material = Enum.Material.SmoothPlastic
-			ring.Transparency = 0.35
-			ring.CastShadow = false
-		end
-	end
-
-	-- A handful of floating asteroid chunks around the arena rim for
-	-- mid-distance parallax.
-	local asteroids = Instance.new("Folder")
-	asteroids.Name = "Asteroids"
-	asteroids.Parent = ctx.mapFolder
-
-	for i = 1, 30 do
-		local angle = rng:NextNumber() * math.pi * 2
-		local r = arenaHalf + 80 + rng:NextNumber() * 200
-		local y = 20 + rng:NextNumber() * 140
-		local ax = math.cos(angle) * r
-		local az = math.sin(angle) * r
-		local s = 3 + rng:NextNumber() * 8
-		local asteroid = makePart(asteroids, "Asteroid_" .. i)
-		asteroid.Shape = Enum.PartType.Ball
-		asteroid.Size = Vector3.new(s, s * (0.7 + rng:NextNumber() * 0.5), s)
-		asteroid.CFrame = CFrame.new(ax, y, az)
-			* CFrame.Angles(
-				rng:NextNumber() * math.pi,
-				rng:NextNumber() * math.pi,
-				rng:NextNumber() * math.pi
-			)
-		asteroid.Color = palette.rockDark
-		asteroid.Material = Enum.Material.Slate
-		asteroid.CastShadow = false
-	end
+	buildSurroundDefense(ctx)
 end
 
 -- ============================================================================

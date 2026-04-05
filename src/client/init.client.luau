@@ -27,17 +27,24 @@ local Tutorial = require(script.Tutorial)
 local player = Players.LocalPlayer
 print(string.format("[TowerDefense] Client booting for %s", player.Name))
 
--- Tutorial is only shown the first time the player walks into the
--- defense portal, not on the home screen or on subsequent returns.
+-- Tutorial is shown once per session, starting in the lobby after the
+-- player clicks Play. It has a lobby phase (ground arrows to the defense
+-- portal) and then an arena phase (HUD screen arrows).
 local tutorialShown = false
 
 Hud.mount(function()
 	-- Home screen Play button was clicked — drop the player into the lobby
-	-- in character view so they can walk to a portal. The tutorial waits
-	-- until they actually enter the defense realm.
+	-- in character view so they can walk to a portal, and kick off the
+	-- tutorial's lobby phase.
 	Placement.setEnabled(true)
 	Placement.enterLobbyMode()
 	Hud.setArenaHudVisible(false)
+	if not tutorialShown then
+		tutorialShown = true
+		Tutorial.showPrompt(function()
+			Tutorial.start(nil)
+		end, function() end)
+	end
 end)
 
 Hud.setReturnCallback(function()
@@ -57,6 +64,70 @@ Hud.setEquipGunCallback(function(gunKey)
 	Remotes.EquipGun:FireServer(gunKey)
 end)
 
+-- The Robux shop's cash packs are Developer Products, so the client
+-- initiates the purchase prompt directly. The server only sees the
+-- result via MarketplaceService.ProcessReceipt, where it grants the
+-- gold. We pass a zero productId through when the shop card still
+-- has a placeholder id (pre-publish / Studio test) so the Hud can
+-- short-circuit to a friendly "not configured" toast instead.
+local MarketplaceService = game:GetService("MarketplaceService")
+Hud.setBuyCashPackCallback(function(productId)
+	if productId and productId > 0 then
+		pcall(function()
+			MarketplaceService:PromptProductPurchase(player, productId)
+		end)
+	end
+end)
+
+-- --- Admin cheat code ---
+-- Listen globally for the sequence "5695". The buffer holds the last
+-- 4 digits typed; when it matches, we fire UnlockAdmin and the server
+-- validates + grants admin. The buffer tolerates arbitrary other keys
+-- in between (it's a trailing-match, not a prefix-reset) so the user
+-- can type the code in any context.
+local UserInputService = game:GetService("UserInputService")
+local ADMIN_CODE = "5695"
+local adminBuffer = ""
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then
+		return
+	end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then
+		return
+	end
+	local digit: string? = nil
+	local kc = input.KeyCode
+	if kc == Enum.KeyCode.Zero or kc == Enum.KeyCode.KeypadZero then
+		digit = "0"
+	elseif kc == Enum.KeyCode.One or kc == Enum.KeyCode.KeypadOne then
+		digit = "1"
+	elseif kc == Enum.KeyCode.Two or kc == Enum.KeyCode.KeypadTwo then
+		digit = "2"
+	elseif kc == Enum.KeyCode.Three or kc == Enum.KeyCode.KeypadThree then
+		digit = "3"
+	elseif kc == Enum.KeyCode.Four or kc == Enum.KeyCode.KeypadFour then
+		digit = "4"
+	elseif kc == Enum.KeyCode.Five or kc == Enum.KeyCode.KeypadFive then
+		digit = "5"
+	elseif kc == Enum.KeyCode.Six or kc == Enum.KeyCode.KeypadSix then
+		digit = "6"
+	elseif kc == Enum.KeyCode.Seven or kc == Enum.KeyCode.KeypadSeven then
+		digit = "7"
+	elseif kc == Enum.KeyCode.Eight or kc == Enum.KeyCode.KeypadEight then
+		digit = "8"
+	elseif kc == Enum.KeyCode.Nine or kc == Enum.KeyCode.KeypadNine then
+		digit = "9"
+	end
+	if not digit then
+		return
+	end
+	adminBuffer = (adminBuffer .. digit):sub(-#ADMIN_CODE)
+	if adminBuffer == ADMIN_CODE then
+		adminBuffer = ""
+		Remotes.UnlockAdmin:FireServer(ADMIN_CODE)
+	end
+end)
+
 Placement.init()
 PlayerGun.init()
 Hud.setArenaHudVisible(false)
@@ -67,18 +138,30 @@ local inArena = false
 local equippedGunKey: string? = nil
 
 -- Refreshes the gun model + crosshair based on the current arena /
--- tower-selection / equipped-gun state. The gun is visible only when:
+-- tower-selection / equipped-gun / UI-hover state. The gun is visible
+-- only when:
 --   * The player is in an arena
 --   * A gun is equipped
 --   * No tower is currently selected in the HUD (otherwise the player
---     is trying to build, so we auto-unequip).
+--     is trying to build, so we auto-unequip)
+--   * The pointer isn't hovering any HUD button (otherwise the crosshair
+--     and held tool would get in the way of clicking UI — the gun
+--     auto-holsters on hover-enter and re-equips on hover-leave).
 local function refreshGunVisibility()
-	local shouldShow = inArena and equippedGunKey ~= nil and not Hud.isTowerSelected()
+	local shouldShow = inArena
+		and equippedGunKey ~= nil
+		and not Hud.isTowerSelected()
+		and not Hud.isHoveringHudButton()
 	PlayerGun.setVisible(shouldShow)
 	Hud.setCrosshairVisible(shouldShow)
 end
 
 Hud.setSelectionChangedCallback(refreshGunVisibility)
+-- Re-run the visibility check whenever the player's pointer enters /
+-- leaves a button, so the gun holsters and re-equips on hover.
+Hud.setHoverTransitionCallback(function(_isHovering)
+	refreshGunVisibility()
+end)
 
 -- Server → client state sync. Also watches for a gameOver → not gameOver
 -- transition so the cinematic camera is released on restart, and for
@@ -93,6 +176,13 @@ Remotes.StateUpdate.OnClientEvent:Connect(function(state)
 
 	if state.equippedGun ~= equippedGunKey then
 		equippedGunKey = state.equippedGun
+		-- Equipping a gun while a tower was selected would leave the
+		-- player in a half-mode — trying to build and shoot at the
+		-- same time. Clear the tower selection so the gun is usable
+		-- immediately and the bottom panel highlight drops.
+		if equippedGunKey ~= nil and Hud.isTowerSelected() then
+			Hud.clearSelection()
+		end
 		PlayerGun.setEquipped(equippedGunKey)
 		refreshGunVisibility()
 	end
@@ -532,7 +622,13 @@ end)
 -- When they click the Return to Lobby button, server fires EnterRealm("lobby")
 -- and we swap back to the default follow camera. The tutorial is also
 -- triggered on first defense-portal entry.
-Remotes.EnterRealm.OnClientEvent:Connect(function(realm)
+Remotes.EnterRealm.OnClientEvent:Connect(function(realm, arenaOffset)
+	-- Server now sends (realm, arenaOffset). In the lobby we treat the
+	-- offset as zero. For a realm entry, the offset tells us where our
+	-- private arena lives in world space so Placement can rebase its
+	-- ghost / overview camera / raycast lookups.
+	local offset = if typeof(arenaOffset) == "Vector3" then arenaOffset else Vector3.zero
+	Placement.setArenaOffset(offset)
 	if realm == "lobby" then
 		Placement.enterLobbyMode()
 		Hud.setArenaHudVisible(false)
@@ -553,19 +649,26 @@ Remotes.EnterRealm.OnClientEvent:Connect(function(realm)
 	Hud.setRealmTowers(RealmDefs.getTowerList(realm))
 	inArena = true
 	refreshGunVisibility()
-	if not tutorialShown then
-		tutorialShown = true
-		Tutorial.showPrompt(function()
-			Tutorial.start(nil)
-		end, function() end)
-	end
+	-- Let the tutorial's lobby walk-to step auto-advance now that we're
+	-- actually inside an arena. No-op if the tutorial isn't running.
+	Tutorial.notifyArenaEntered()
 end)
 
 -- Keep the "Enemies" stat live between state broadcasts by polling the
--- Enemies folder each frame. Not load-bearing — just makes the number
--- feel responsive.
+-- local player's per-arena Enemies folder each frame. Not load-bearing
+-- — just makes the number feel responsive. With multiplayer this now
+-- lives under workspace.PlayerArena_<userId>.Enemies instead of the
+-- old global workspace.Enemies.
 local function getEnemyCount(): number
-	local folder = workspace:FindFirstChild("Enemies")
+	local localPlayer = Players.LocalPlayer
+	if not localPlayer then
+		return 0
+	end
+	local arena = workspace:FindFirstChild("PlayerArena_" .. localPlayer.UserId)
+	if not arena then
+		return 0
+	end
+	local folder = arena:FindFirstChild("Enemies")
 	if not folder then
 		return 0
 	end

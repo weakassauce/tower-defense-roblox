@@ -48,25 +48,52 @@ local towersFolder: Folder? = nil
 local OVERVIEW_POS = Vector3.new(0, 150, 100)
 local OVERVIEW_TARGET = Vector3.new(0, 0, 0)
 
+-- World-space offset of the local player's arena. On a fresh server
+-- this is (0,0,0); when the server spawns multiple players, each
+-- player's arena sits at their per-slot offset. The server sends this
+-- via EnterRealm and init.client forwards it to Placement.setArenaOffset
+-- so the placement ghost + overview camera aim at the player's own
+-- arena instead of the origin. Reset to zero when entering the lobby.
+local arenaOffset = Vector3.zero
+
 -- --- Helpers ---
 
--- Re-fetch cached Map.Cells and Towers folders if the cached refs have
--- been destroyed. This happens whenever the server rebuilds the arena
--- (realm switch), and without this guard the client keeps raycasting
--- against parent-less instances and placement silently fails.
+-- Re-fetch the local player's Map.Cells and Towers folders if the
+-- cached refs have been destroyed. In single-player these were under
+-- workspace.Map / workspace.Towers; with per-player private arenas
+-- they live under workspace.PlayerArena_<userId> instead. Walking the
+-- LocalPlayer's folder keeps raycasts scoped to this player's arena
+-- and invisible to everyone else's.
 local function ensureWorkspaceFolders()
+	local localPlayer = Players.LocalPlayer
+	local arenaFolder = if localPlayer
+		then workspace:FindFirstChild("PlayerArena_" .. localPlayer.UserId)
+		else nil
 	if not cellsFolder or cellsFolder.Parent == nil then
-		local map = workspace:FindFirstChild("Map")
+		local map = arenaFolder and arenaFolder:FindFirstChild("Map") or nil
 		cellsFolder = if map then map:FindFirstChild("Cells") :: Folder? else nil
 	end
 	if not towersFolder or towersFolder.Parent == nil then
-		towersFolder = workspace:FindFirstChild("Towers") :: Folder?
+		towersFolder = arenaFolder and arenaFolder:FindFirstChild("Towers") :: Folder? or nil
 	end
 end
 
 local function applyOverviewCamera()
 	camera.CameraType = Enum.CameraType.Scriptable
-	camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
+	camera.CFrame = CFrame.lookAt(OVERVIEW_POS + arenaOffset, OVERVIEW_TARGET + arenaOffset)
+end
+
+-- Called by init.client whenever EnterRealm fires so the client knows
+-- where its arena is in world space. Passing Vector3.zero (lobby) is
+-- a valid "no offset" value and the ghost math degrades to origin.
+function Placement.setArenaOffset(offset: Vector3)
+	arenaOffset = offset
+	-- Bust cached folder refs since the arena folder name changed
+	-- (PlayerArena_<uid> is stable per player, but the contents are
+	-- rebuilt every realm switch — ensureWorkspaceFolders will
+	-- re-find them on the next call).
+	cellsFolder = nil
+	towersFolder = nil
 end
 
 local function applyExploreCamera()
@@ -126,8 +153,11 @@ local function getTowerUnderMouse(): (number?, number?)
 		return nil, nil
 	end
 
+	-- The tower's world position includes the arena offset; subtract
+	-- it before converting back to grid coords so a tower in slot 2's
+	-- arena (x=8000) still resolves to the same (gx, gy) as slot 1.
 	local pivot = inst:GetPivot().Position
-	local gx, gy = Config.worldToGrid(pivot.X, pivot.Z)
+	local gx, gy = Config.worldToGrid(pivot.X - arenaOffset.X, pivot.Z - arenaOffset.Z)
 	return gx, gy
 end
 
@@ -168,13 +198,17 @@ local function showPreview(gx: number, gy: number, valid: boolean, rangeStuds: n
 	if not preview or not previewRange then
 		return
 	end
-	local cellWorld = Config.gridToWorld(gx, gy)
+	-- Config.gridToWorld is origin-relative; add the player's arena
+	-- offset so the ghost ends up on their own arena cells instead of
+	-- at the origin (which would be another player's arena, or empty
+	-- space on a server where the local player isn't in slot 1).
+	local cellWorld = Config.gridToWorld(gx, gy) + arenaOffset
 	preview.Transparency = 0.55
-	preview.Position = Vector3.new(cellWorld.X, 3, cellWorld.Z)
+	preview.Position = Vector3.new(cellWorld.X, 3 + arenaOffset.Y, cellWorld.Z)
 	preview.Color = valid and Color3.fromRGB(100, 220, 100) or Color3.fromRGB(230, 80, 80)
 
 	previewRange.Transparency = 0.88
-	previewRange.Position = Vector3.new(cellWorld.X, 0.25, cellWorld.Z)
+	previewRange.Position = Vector3.new(cellWorld.X, 0.25 + arenaOffset.Y, cellWorld.Z)
 	previewRange.Size = Vector3.new(rangeStuds * 2, 0.2, rangeStuds * 2)
 	previewRange.Color = preview.Color
 end
@@ -270,16 +304,19 @@ function Placement.enterLobbyMode()
 	cameraLocked = true
 end
 
--- Sets the top-down overview camera (used when the player touches the
--- Realm Defense portal). Unlocks the camera toggle so the player can
--- flip to explore if they want.
+-- Drops the player into third-person character view when they touch a
+-- realm portal. Previously we slammed the camera into the top-down
+-- overview immediately, which was disorienting and buried the player's
+-- character model. Now you start in explore mode and can press C (or
+-- tap the camera toggle button) to swap to overview when you want to
+-- place towers. The camera lock is released either way so the toggle
+-- works once the player is inside the arena.
 function Placement.enterArenaMode()
 	cinematicCFrame = nil
 	lerpStartCFrame = nil
-	mode = "overview"
-	camera.CameraType = Enum.CameraType.Scriptable
-	camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
 	cameraLocked = false
+	mode = "explore"
+	applyExploreCamera()
 end
 
 function Placement.init()
@@ -349,9 +386,30 @@ function Placement.init()
 		end
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			-- Belt-and-suspenders: if the click is over any tracked
+			-- button, swallow it here so the button's Activated event
+			-- handles it. `processed` should already catch this; the
+			-- hover tracker is our backup. (Hud tracks every GuiButton
+			-- under PlayerGui, including tutorial/overlay buttons, so
+			-- this covers all UI.)
+			if Hud.isHoveringHudButton() then
+				return
+			end
+			-- Mobile-friendly pickup: if pickup mode is armed and the
+			-- tap landed on a placed tower, send it to inventory. Mode
+			-- auto-disables on successful pickup so the player doesn't
+			-- accidentally delete more towers on subsequent taps.
+			if Hud.isPickupMode() then
+				local tgx, tgy = getTowerUnderMouse()
+				if tgx and tgy then
+					Remotes.PickupTower:FireServer(tgx, tgy)
+					Hud.notifyTowerPickedUp()
+				end
+				return
+			end
 			local sel = Hud.getSelection()
 			if TowerDefs[sel.towerType] then
-				-- A tower is selected → left click places it.
+				-- A tower is selected → a tap on a grass cell places it.
 				local gx, gy = getCellUnderMouse()
 				if gx and gy then
 					if sel.fromInventoryIndex >= 0 then
@@ -363,7 +421,7 @@ function Placement.init()
 				return
 			end
 			-- No tower selected → if a gun is equipped, fire it at the
-			-- point under the mouse. The server validates range, fire
+			-- point under the cursor. The server validates range, fire
 			-- rate, and which enemy (if any) was actually hit.
 			local gunKey = Hud.getEquippedGun()
 			if not gunKey then
@@ -380,6 +438,9 @@ function Placement.init()
 			local result = workspace:Raycast(ray.Origin, ray.Direction * 500, params)
 			local targetPos = if result then result.Position else ray.Origin + ray.Direction * 500
 			Remotes.FireGun:FireServer(targetPos)
+			-- Bump the tutorial-visible shot counter so the "try
+			-- shooting" step auto-advances on the first trigger pull.
+			Hud.incrementShotsFired()
 		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
 			local gx, gy = getTowerUnderMouse()
 			if gx and gy then

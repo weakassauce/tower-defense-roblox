@@ -1,13 +1,19 @@
 --!strict
 -- src/server/init.server.luau
--- Authoritative game loop. Owns the map, enemy/tower managers, game state,
--- and wave controller. Players spawn in the lobby; touching a realm portal
--- builds that realm's themed arena and teleports the player in. Returning
--- to the lobby destroys the arena; re-entering rebuilds it.
+-- Multiplayer server entry point. Each player who joins gets:
+--   * A reserved slot (1..6) that maps to a unique world-space offset
+--   * A per-player GameState instance
+--   * A per-player ArenaController that owns their Map / Castle /
+--     Towers / Projectiles / Enemies folders at the slot offset
+--   * A DataStore-backed PlayerProgress load on join / save on leave
+-- The lobby is shared: all players walk around one lobby island and
+-- see each other. Touching a realm portal teleports just that player
+-- into their own private arena.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local TowerDefs = require(ReplicatedStorage.Shared.TowerDefs)
@@ -16,20 +22,54 @@ local Guns = require(ReplicatedStorage.Shared.Guns)
 local GamePassConfig = require(ReplicatedStorage.Shared.GamePassConfig)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
-local MarketplaceService = game:GetService("MarketplaceService")
-
-local Map = require(script.Map)
-local EnemyManager = require(script.EnemyManager)
-local TowerManager = require(script.TowerManager)
 local GameState = require(script.GameState)
-local WaveController = require(script.WaveController)
 local LightingSetup = require(script.LightingSetup)
-local Castle = require(script.Castle)
 local Lobby = require(script.Lobby)
+local Castle = require(script.Castle)
+local ArenaController = require(script.ArenaController)
+local PlayerSlot = require(script.PlayerSlot)
+local PlayerProgress = require(script.PlayerProgress)
 
 print("[TowerDefense] Server booting")
 
 LightingSetup.apply()
+
+-- Loudly warn if any Robux ID is still 0 in a published (non-Studio)
+-- server. In Studio the dev-fallback paths hand out premium items for
+-- free so local testing works without real IDs; in production those
+-- zeros silently break purchases (either nothing happens when the
+-- player clicks Buy, or the item is handed out for free to everyone).
+-- Printing a single prominent block here means a quick glance at the
+-- server logs after publishing catches any missed entries.
+if not RunService:IsStudio() then
+	local missing: { string } = {}
+	if GamePassConfig.PREMIUM_TOWER.id == 0 then
+		table.insert(missing, "PREMIUM_TOWER (Celestial Bastion, 99 R$)")
+	end
+	if GamePassConfig.PREMIUM_GUN.id == 0 then
+		table.insert(missing, "PREMIUM_GUN (Starfire Rifle, 49 R$)")
+	end
+	if GamePassConfig.PREMIUM_GUN_2.id == 0 then
+		table.insert(missing, "PREMIUM_GUN_2 (Void Reaper, 49 R$)")
+	end
+	for i, pack in GamePassConfig.CASH_PACKS do
+		if pack.productId == 0 then
+			table.insert(
+				missing,
+				string.format("CASH_PACKS[%d] (%s, %d R$)", i, pack.label, pack.robuxPrice)
+			)
+		end
+	end
+	if #missing > 0 then
+		warn("============================================================")
+		warn("[TowerDefense] Robux IDs not configured. Players CANNOT pay:")
+		for _, name in missing do
+			warn("  - " .. name)
+		end
+		warn("Fill these in src/shared/GamePassConfig.luau before launch.")
+		warn("============================================================")
+	end
+end
 
 -- Strip the default Baseplate / SpawnLocation that come with a blank place
 for _, child in workspace:GetChildren() do
@@ -43,7 +83,9 @@ local spawn = Instance.new("SpawnLocation")
 spawn.Name = "TDSpawn"
 spawn.Size = Vector3.new(6, 0.4, 6)
 spawn.Anchored = true
-spawn.CanCollide = true
+spawn.CanCollide = false
+spawn.CanTouch = false
+spawn.CanQuery = false
 spawn.Transparency = 1
 spawn.TopSurface = Enum.SurfaceType.Smooth
 spawn.BottomSurface = Enum.SurfaceType.Smooth
@@ -51,117 +93,107 @@ spawn.Neutral = true
 spawn.Enabled = true
 spawn.Parent = workspace
 
-TowerManager.init()
-EnemyManager.init({ Vector3.new(0, 2, 0) }) -- placeholder waypoints until an arena is built
-
--- --- Current arena state ---
--- `currentArena` is nil when no realm has been entered yet (fresh server
--- or everyone is back in the lobby). When a player touches a portal we
--- build a realm's themed arena; we keep it alive across ReturnToLobby so
--- quick re-entry is instant, and rebuild it only when the realm changes.
-type ArenaState = {
-	realm: string,
-	mapData: Map.MapData,
+-- --- Per-player contexts ---
+-- One entry per connected player, populated on PlayerAdded and removed
+-- on PlayerRemoving. Every remote handler and the main Heartbeat loop
+-- pull the acting player's context out of here; there's no server-wide
+-- singleton game state anymore.
+type PlayerContext = {
+	player: Player,
+	slotIndex: number,
+	slotOffset: Vector3,
+	gameState: GameState.GameState,
+	arena: ArenaController.ArenaController,
+	inArena: boolean, -- true while the player is inside an arena (not the lobby)
+	premiumOwned: boolean?, -- game-pass ownership cache; nil = not yet checked
+	lastSaveAt: number, -- os.clock() of the most recent auto-save
+	lastFireAt: number, -- gun rate-limiter
 }
-local currentArena: ArenaState? = nil
 
-local function destroyArena()
-	EnemyManager.clear()
-	TowerManager.clear()
-	WaveController.reset()
-	local existingMap = workspace:FindFirstChild("Map")
-	if existingMap then
-		existingMap:Destroy()
-	end
-	local existingCastle = workspace:FindFirstChild("Castle")
-	if existingCastle then
-		existingCastle:Destroy()
-	end
-	currentArena = nil
+local contexts: { [Player]: PlayerContext } = {}
+
+-- --- Broadcast helpers ---
+-- Every state update is now targeted at a single player because each
+-- player has their own GameState. The old StateUpdate:FireAllClients
+-- broadcasted a shared singleton; with per-player state that would
+-- leak one player's gold / realm / inventory to everyone else.
+local function broadcastToPlayer(ctx: PlayerContext)
+	Remotes.StateUpdate:FireClient(ctx.player, ctx.gameState:get())
 end
 
--- Save the currently active arena's tower layout + game-state into
--- GameState's per-realm save slot so re-entering this realm later
--- picks up where the player left off.
-local function stashCurrentRealmProgress()
-	if not currentArena then
-		return
+-- --- Lobby camera limits ---
+local LOBBY_MAX_ZOOM = 18
+local ARENA_MAX_ZOOM = 400
+
+local function applyLobbyCameraLimit(player: Player)
+	player.CameraMaxZoomDistance = LOBBY_MAX_ZOOM
+end
+
+local function applyArenaCameraLimit(player: Player)
+	player.CameraMaxZoomDistance = ARENA_MAX_ZOOM
+end
+
+-- --- Lobby (shared, single instance) ---
+-- `lobbyData` is built once and stays parented to workspace forever.
+-- All players share it. Touching a portal fires the callback with the
+-- triggering player so we can route into their specific arena.
+local lobbyData: Lobby.LobbyData
+local ensurePlayerContext: (player: Player) -> PlayerContext?
+
+-- Returns the union of every connected player's highestWaves, so a
+-- portal only stays locked if NO player in the server has met its
+-- requirement. This keeps the shared lobby's portal lock state sane
+-- in multi-player: you don't want it to flicker whenever a different
+-- player walks past with a lower progression.
+local function aggregatedHighestWaves(): { [string]: number }
+	local agg: { [string]: number } = {}
+	for _, ctx in contexts do
+		for realmName, wave in ctx.gameState:getHighestWaves() do
+			if (agg[realmName] or 0) < wave then
+				agg[realmName] = wave
+			end
+		end
 	end
-	GameState.saveCurrentRealm(TowerManager.snapshot())
+	return agg
 end
 
-local function buildArena(realmName: string)
-	-- Snapshot the previous realm (if any) before tearing it down.
-	stashCurrentRealmProgress()
-
-	destroyArena()
-
-	local realm = RealmDefs.get(realmName)
-	-- Swap the active path BEFORE building the map: Map.build reads
-	-- Config.PATH, and the server place-tower handlers use
-	-- Config.isPath to reject placements on the walkway.
-	Config.setCurrentPath(realm.path)
-	local mapData = Map.build(realmName)
-
-	-- Extend the waypoints with the interior of the castle so enemies
-	-- visibly march into the gate before dying.
-	local extraWaypoints = Castle.build(mapData.castleCenter, Config.STARTING_HP, realmName)
-	for _, wp in extraWaypoints do
-		table.insert(mapData.waypoints, wp)
-	end
-
-	EnemyManager.init(mapData.waypoints)
-	TowerManager.init()
-
-	-- Load saved per-realm progress (hp, wave, inventory, tower layout).
-	-- On a fresh start this returns an empty tower list and resets the
-	-- per-realm state. Gold is global and is NOT reset here.
-	local savedTowers = GameState.startRealm(realmName)
-	TowerManager.restoreFrom(savedTowers)
-	Castle.updateHp(GameState.get().hp, Config.STARTING_HP)
-
-	currentArena = { realm = realmName, mapData = mapData }
-end
-
--- Arena spawn point (where players land when entering a realm). Uses the
--- map's path start as the "safe edge" so players are behind the defenses.
-local function getArenaSpawnCFrame(): CFrame
-	return CFrame.new(Vector3.new(0, 8, 0))
-end
-
--- Declared early so the Lobby callback can call it. The actual body is
--- assigned further down, after GameState is wired up.
-local broadcastState: () -> ()
-local broadcastToPlayer: (Player) -> ()
-
--- --- Lobby ---
-local lobbyData = Lobby.build(function(player, realmName)
-	-- A player touched a realm portal: (re)build that realm's arena if
-	-- it isn't already the active one, then teleport and notify client.
+lobbyData = Lobby.build(function(player, realmName)
 	if not RealmDefs.exists(realmName) then
 		return
 	end
-	-- Gate: check the unlock requirement against the global highest-wave
-	-- table before letting the player enter.
-	if not RealmDefs.isUnlocked(realmName, GameState.getHighestWaves()) then
+	local ctx = contexts[player]
+	if not ctx then
 		return
 	end
-	local rebuilt = false
-	if not currentArena or currentArena.realm ~= realmName then
-		buildArena(realmName)
-		rebuilt = true
+	-- Gate: check the unlock requirement against THIS player's own
+	-- highest-wave progress only. Two players can be at different
+	-- unlock stages on the same server and the lock is still correct
+	-- per-player because each has their own ArenaController.
+	if not RealmDefs.isUnlocked(realmName, ctx.gameState:getHighestWaves()) then
+		return
+	end
+	local sameRealm = ctx.arena.realmName == realmName
+	if not sameRealm then
+		ctx.arena:enterRealm(realmName)
+	end
+	ctx.inArena = true
+	applyArenaCameraLimit(player)
+	-- Auto-equip the starter gun (or any owned gun) whenever the player
+	-- enters an arena with nothing equipped.
+	if ctx.gameState:getEquippedGun() == nil then
+		if ctx.gameState:ownsGun("starter") then
+			ctx.gameState:equipGun("starter")
+		end
 	end
 	local char = player.Character
 	if char then
-		char:PivotTo(getArenaSpawnCFrame())
+		char:PivotTo(ctx.arena:getArenaSpawnCFrame())
 	end
-	Remotes.EnterRealm:FireClient(player, realmName)
-	if rebuilt then
-		broadcastState()
-	else
-		broadcastToPlayer(player)
-	end
-end, GameState.getHighestWaves())
+	-- Fire EnterRealm with the slot offset so the client can rebase its
+	-- placement ghost + overview camera to the player's arena position.
+	Remotes.EnterRealm:FireClient(player, realmName, ctx.slotOffset)
+	broadcastToPlayer(ctx)
+end, aggregatedHighestWaves())
 spawn.CFrame = lobbyData.spawnCFrame
 
 print(string.format(
@@ -176,95 +208,267 @@ print(string.format(
 	#RealmDefs.ORDER
 ))
 
--- --- State broadcast helpers ---
-
-broadcastState = function()
-	Remotes.StateUpdate:FireAllClients(GameState.get())
-end
-
-broadcastToPlayer = function(player: Player)
-	Remotes.StateUpdate:FireClient(player, GameState.get())
-end
-
-Players.PlayerAdded:Connect(function(player)
-	task.wait(0.5)
-	broadcastToPlayer(player)
-end)
-for _, player in Players:GetPlayers() do
-	task.defer(broadcastToPlayer, player)
-end
-
--- "Play Again" inside the current realm after a defeat. Clears the
--- per-realm save (so we don't reload a game-over state), wipes enemies
--- and towers, and rebuilds the castle. Gold is global and is NOT reset
--- here; the player keeps whatever they had at defeat.
-local function resetGame()
-	if not currentArena then
-		return
+-- --- Premium game-pass ownership (per player) ---
+local function ownsPremiumTower(ctx: PlayerContext): boolean
+	if ctx.gameState:isAdmin() then
+		return true
 	end
-	local realmName = currentArena.realm
-	EnemyManager.clear()
-	TowerManager.clear()
-	WaveController.reset()
-	GameState.resetCurrentRealm()
-	-- Rebuild the castle (it may have exploded on the previous defeat)
-	Castle.build(currentArena.mapData.castleCenter, Config.STARTING_HP, realmName)
-	Castle.updateHp(GameState.get().hp, Config.STARTING_HP)
-	broadcastState()
-end
-
--- --- Premium tower (Game Pass) ownership ---
--- Cached per player; refreshed on join and when a purchase finishes.
-local premiumOwners: { [Player]: boolean } = {}
-
-local function ownsPremiumTower(player: Player): boolean
-	if premiumOwners[player] ~= nil then
-		return premiumOwners[player]
+	if ctx.premiumOwned ~= nil then
+		return ctx.premiumOwned
 	end
 	local passId = GamePassConfig.PREMIUM_TOWER.id
-	-- In Studio or when the pass ID hasn't been configured yet, grant
-	-- access for free so the developer can still test the tower.
 	if passId == 0 or RunService:IsStudio() then
-		premiumOwners[player] = true
+		ctx.premiumOwned = true
 		return true
 	end
 	local ok, result = pcall(function()
-		return MarketplaceService:UserOwnsGamePassAsync(player.UserId, passId)
+		return MarketplaceService:UserOwnsGamePassAsync(ctx.player.UserId, passId)
 	end)
 	local owned = ok and result == true
-	premiumOwners[player] = owned
+	ctx.premiumOwned = owned
 	return owned
 end
 
-Players.PlayerAdded:Connect(function(player)
-	task.spawn(function()
-		ownsPremiumTower(player)
+-- --- PlayerAdded / PlayerRemoving ---
+
+-- Load the player's DataStore save, seed the GameState from it, and
+-- wire up their ArenaController. Returns the new context so the caller
+-- can immediately broadcast state or do other per-player setup.
+function ensurePlayerContext(player: Player): PlayerContext?
+	if contexts[player] then
+		return contexts[player]
+	end
+
+	local slotIndex, slotOffset = PlayerSlot.allocate(player)
+	if not slotIndex or not slotOffset then
+		warn(string.format("[TowerDefense] No slot available for %s, server is full", player.Name))
+		player:Kick("Server is full.")
+		return nil
+	end
+
+	local gameState = GameState.new()
+
+	-- Load persistent progress and seed the state. If the load returned
+	-- a fresh default, trust Config.STARTING_GOLD; otherwise trust the
+	-- persisted gold value even if it's below STARTING_GOLD (player may
+	-- have spent down).
+	local save, isFresh = PlayerProgress.load(player)
+	if not isFresh then
+		gameState:get().gold = save.gold
+	end
+	gameState:get().ownedGuns = save.ownedGuns
+	gameState:get().equippedGun = save.equippedGun
+	for realmName, wave in save.highestWaves do
+		gameState:getHighestWaves()[realmName] = wave
+	end
+
+	local arena = ArenaController.new(player, slotOffset, gameState)
+
+	local ctx: PlayerContext = {
+		player = player,
+		slotIndex = slotIndex,
+		slotOffset = slotOffset,
+		gameState = gameState,
+		arena = arena,
+		inArena = false,
+		premiumOwned = nil,
+		lastSaveAt = os.clock(),
+		lastFireAt = 0,
+	}
+	contexts[player] = ctx
+	return ctx
+end
+
+-- Snapshot the current SaveData for this player and push it to the
+-- DataStore. Safe to call repeatedly; the PlayerProgress wrapper
+-- handles its own throttling + error logging.
+local function persistContext(ctx: PlayerContext)
+	local state = ctx.gameState:get()
+	local data: PlayerProgress.SaveData = {
+		gold = state.gold,
+		ownedGuns = state.ownedGuns,
+		equippedGun = state.equippedGun,
+		highestWaves = ctx.gameState:getHighestWaves(),
+	}
+	PlayerProgress.save(ctx.player, data)
+	ctx.lastSaveAt = os.clock()
+end
+
+-- Respawn handler: if the player was in an arena, put them back into
+-- their arena spawn instead of dropping them into the lobby.
+local function hookCharacterRespawn(ctx: PlayerContext)
+	ctx.player.CharacterAdded:Connect(function(char)
+		task.wait()
+		if ctx.inArena then
+			char:PivotTo(ctx.arena:getArenaSpawnCFrame())
+		else
+			char:PivotTo(lobbyData.spawnCFrame)
+		end
 	end)
-end)
+end
 
-Players.PlayerRemoving:Connect(function(player)
-	premiumOwners[player] = nil
-end)
+local function onPlayerAdded(player: Player)
+	applyLobbyCameraLimit(player)
+	local ctx = ensurePlayerContext(player)
+	if not ctx then
+		return
+	end
+	hookCharacterRespawn(ctx)
 
-MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, wasPurchased)
-	if passId == GamePassConfig.PREMIUM_TOWER.id and wasPurchased then
-		premiumOwners[player] = true
-		-- Tell the client to refresh its tower picker so the celestial
-		-- card swaps from "99 R$" to the normal affordable state.
-		Remotes.PremiumTowerUnlocked:FireClient(player)
+	-- Kick off a premium-tower ownership probe in the background so
+	-- the cache is warm when the player first touches the tower picker.
+	task.spawn(function()
+		ownsPremiumTower(ctx)
+	end)
+
+	-- Refresh lobby portal locks using the new aggregated view so the
+	-- joining player immediately sees their own unlocks reflected.
+	Lobby.refreshUnlocks(lobbyData, aggregatedHighestWaves())
+
+	-- Initial state push. Wait a moment for the client to subscribe.
+	task.wait(0.5)
+	broadcastToPlayer(ctx)
+end
+
+local function onPlayerRemoving(player: Player)
+	local ctx = contexts[player]
+	if not ctx then
+		return
+	end
+	-- Stash any in-progress realm so re-joining this session resumes
+	-- where the player left off. DataStore only persists the long-term
+	-- fields; per-realm in-progress state stays server-local.
+	ctx.arena:stashCurrentRealm()
+	persistContext(ctx)
+	ctx.arena:destroy()
+	PlayerSlot.release(player)
+	contexts[player] = nil
+
+	-- The aggregated lock table may have shrunk now that this player
+	-- is gone; refresh so the lobby reflects the remaining players.
+	Lobby.refreshUnlocks(lobbyData, aggregatedHighestWaves())
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+
+-- Handle any players already in the server when this script finishes
+-- booting (e.g. a hot reload).
+for _, player in Players:GetPlayers() do
+	task.spawn(onPlayerAdded, player)
+end
+
+-- --- BindToClose: final save pass before shutdown ---
+game:BindToClose(function()
+	-- Roblox gives us up to 30 seconds on BindToClose. Save every
+	-- connected player in parallel so slow saves don't starve others.
+	local tasks = {}
+	for _, ctx in contexts do
+		local c = ctx
+		table.insert(tasks, task.spawn(function()
+			pcall(function()
+				persistContext(c)
+			end)
+		end))
+	end
+	-- Yield a tick so spawned tasks get a chance to hit the DataStore
+	-- before the server goes down. BindToClose will wait on this
+	-- coroutine's return, which gives us the full grace period.
+	for _ = 1, 120 do
+		task.wait(0.1)
+		local allDone = true
+		for _, t in tasks do
+			if coroutine.status(t) ~= "dead" then
+				allDone = false
+				break
+			end
+		end
+		if allDone then
+			break
+		end
 	end
 end)
 
--- --- Remote handlers ---
+-- --- Admin cheat code ---
+local ADMIN_CODE = "5695"
+
+Remotes.UnlockAdmin.OnServerEvent:Connect(function(player, code)
+	if typeof(code) ~= "string" or code ~= ADMIN_CODE then
+		return
+	end
+	local ctx = contexts[player]
+	if not ctx or ctx.gameState:isAdmin() then
+		return
+	end
+	local keys = {}
+	for key in pairs(Guns.defs) do
+		table.insert(keys, key)
+	end
+	ctx.gameState:setAdmin(keys)
+	ctx.gameState:unlockAllRealms(RealmDefs.ORDER)
+	Lobby.refreshUnlocks(lobbyData, aggregatedHighestWaves())
+	ctx.premiumOwned = true
+	Remotes.PremiumTowerUnlocked:FireClient(player)
+	broadcastToPlayer(ctx)
+	print(string.format("[TowerDefense] Admin unlocked for %s", player.Name))
+end)
+
+-- --- Cash pack Developer Products ---
+local function processReceipt(info: { PlayerId: number, ProductId: number, PurchaseId: string })
+	local payout = GamePassConfig.getCashForProduct(info.ProductId)
+	if not payout then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	local player = Players:GetPlayerByUserId(info.PlayerId)
+	if not player then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	local ctx = contexts[player]
+	if not ctx then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	ctx.gameState:addGold(payout)
+	broadcastToPlayer(ctx)
+	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+MarketplaceService.ProcessReceipt = processReceipt
+
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, wasPurchased)
+	local ctx = contexts[player]
+	if not ctx or not wasPurchased then
+		return
+	end
+	if passId == GamePassConfig.PREMIUM_TOWER.id then
+		ctx.premiumOwned = true
+		Remotes.PremiumTowerUnlocked:FireClient(player)
+	elseif passId == GamePassConfig.PREMIUM_GUN.id then
+		local gunKey = GamePassConfig.PREMIUM_GUN_KEY
+		if not ctx.gameState:ownsGun(gunKey) then
+			ctx.gameState:giveGun(gunKey)
+		end
+		ctx.gameState:equipGun(gunKey)
+		broadcastToPlayer(ctx)
+	elseif passId == GamePassConfig.PREMIUM_GUN_2.id then
+		local gunKey = GamePassConfig.PREMIUM_GUN_2_KEY
+		if not ctx.gameState:ownsGun(gunKey) then
+			ctx.gameState:giveGun(gunKey)
+		end
+		ctx.gameState:equipGun(gunKey)
+		broadcastToPlayer(ctx)
+	end
+end)
+
+-- --- Remote handlers (every handler routes through the caller's context) ---
 
 Remotes.PlaceTower.OnServerEvent:Connect(function(player, gx, gy, towerType)
 	if typeof(gx) ~= "number" or typeof(gy) ~= "number" or typeof(towerType) ~= "string" then
 		return
 	end
-	if not currentArena then
+	local ctx = contexts[player]
+	if not ctx or not ctx.inArena then
 		return
 	end
-	local state = GameState.get()
+	local state = ctx.gameState:get()
 	if state.gameOver then
 		return
 	end
@@ -272,12 +476,10 @@ Remotes.PlaceTower.OnServerEvent:Connect(function(player, gx, gy, towerType)
 	if not def then
 		return
 	end
-	-- Premium tower: require the 99 R$ game pass.
 	local isPremium = towerType == GamePassConfig.PREMIUM_TOWER_KEY
-	if isPremium and not ownsPremiumTower(player) then
+	if isPremium and not ownsPremiumTower(ctx) then
 		return
 	end
-	-- Allowed towers in this realm = 5 base + 3 signature + premium.
 	local realm = RealmDefs.get(state.realm)
 	local isUniversal = false
 	for _, universal in RealmDefs.UNIVERSAL_TOWERS do
@@ -293,148 +495,213 @@ Remotes.PlaceTower.OnServerEvent:Connect(function(player, gx, gy, towerType)
 	then
 		return
 	end
-	if Config.isPath(gx, gy) then
+	-- Per-arena path + occupancy checks so concurrent arenas don't race
+	-- on a shared Config.PATH value.
+	if ctx.arena:isPath(gx, gy) then
 		return
 	end
-	if TowerManager.isOccupied(gx, gy) then
+	local towerMgr = ctx.arena.towerMgr
+	if not towerMgr or towerMgr:isOccupied(gx, gy) then
 		return
 	end
-	-- The premium celestial tower is free to place once the player
-	-- owns the game pass — the Robux purchase is the only cost.
-	if not isPremium then
+	if not isPremium and not ctx.gameState:isAdmin() then
 		local scaledCost = math.floor(def.cost * realm.costMultiplier)
-		if not GameState.trySpend(scaledCost) then
+		if not ctx.gameState:trySpend(scaledCost) then
 			return
 		end
 	end
-	TowerManager.place(gx, gy, towerType)
-	broadcastState()
+	towerMgr:place(gx, gy, towerType)
+	broadcastToPlayer(ctx)
 end)
 
-Remotes.PickupTower.OnServerEvent:Connect(function(_player, gx, gy)
+Remotes.PickupTower.OnServerEvent:Connect(function(player, gx, gy)
 	if typeof(gx) ~= "number" or typeof(gy) ~= "number" then
 		return
 	end
-	if not currentArena then
+	local ctx = contexts[player]
+	if not ctx or not ctx.inArena then
 		return
 	end
-	local state = GameState.get()
+	local state = ctx.gameState:get()
 	if state.gameOver then
 		return
 	end
-	local tower = TowerManager.getAt(gx, gy)
+	local towerMgr = ctx.arena.towerMgr
+	if not towerMgr then
+		return
+	end
+	local tower = towerMgr:getAt(gx, gy)
 	if not tower then
 		return
 	end
-	-- Store the scaled cost (what the player actually paid in this
-	-- realm) so the sell refund matches. Re-placing from inventory
-	-- charges nothing, so this is purely for the sell path.
-	local realm = RealmDefs.get(state.realm)
-	local scaledCost = math.floor(tower.def.cost * realm.costMultiplier)
-	GameState.addToInventory(tower.towerType, scaledCost)
-	TowerManager.remove(tower)
-	broadcastState()
+	local itemCost: number
+	if tower.towerType == GamePassConfig.PREMIUM_TOWER_KEY then
+		itemCost = 0
+	else
+		local realm = RealmDefs.get(state.realm)
+		itemCost = math.floor(tower.def.cost * realm.costMultiplier)
+	end
+	ctx.gameState:addToInventory(tower.towerType, itemCost)
+	towerMgr:remove(tower)
+	broadcastToPlayer(ctx)
 end)
 
-Remotes.PlaceFromInventory.OnServerEvent:Connect(function(_player, invIndex, gx, gy)
+Remotes.PlaceFromInventory.OnServerEvent:Connect(function(player, invIndex, gx, gy)
 	if typeof(invIndex) ~= "number" or typeof(gx) ~= "number" or typeof(gy) ~= "number" then
 		return
 	end
-	if not currentArena then
+	local ctx = contexts[player]
+	if not ctx or not ctx.inArena then
 		return
 	end
-	local state = GameState.get()
+	local state = ctx.gameState:get()
 	if state.gameOver then
 		return
 	end
-	if Config.isPath(gx, gy) or TowerManager.isOccupied(gx, gy) then
+	local towerMgr = ctx.arena.towerMgr
+	if not towerMgr then
 		return
 	end
-	local item = GameState.removeFromInventory(invIndex)
+	if ctx.arena:isPath(gx, gy) or towerMgr:isOccupied(gx, gy) then
+		return
+	end
+	local item = ctx.gameState:removeFromInventory(invIndex)
 	if not item then
 		return
 	end
-	TowerManager.place(gx, gy, item.towerType)
-	broadcastState()
+	towerMgr:place(gx, gy, item.towerType)
+	broadcastToPlayer(ctx)
 end)
 
-Remotes.SellInventoryItem.OnServerEvent:Connect(function(_player, invIndex)
+Remotes.SellInventoryItem.OnServerEvent:Connect(function(player, invIndex)
 	if typeof(invIndex) ~= "number" then
 		return
 	end
-	if not currentArena then
+	local ctx = contexts[player]
+	if not ctx or not ctx.inArena then
 		return
 	end
-	local state = GameState.get()
+	local state = ctx.gameState:get()
 	if state.gameOver then
 		return
 	end
-	local item = GameState.removeFromInventory(invIndex)
+	local preview = ctx.gameState:peekInventory(invIndex)
+	if not preview or preview.towerType == GamePassConfig.PREMIUM_TOWER_KEY then
+		return
+	end
+	local item = ctx.gameState:removeFromInventory(invIndex)
 	if not item then
 		return
 	end
 	local refund = math.floor(item.cost * Config.SELL_RATIO)
-	GameState.addGold(refund)
-	broadcastState()
+	ctx.gameState:addGold(refund)
+	broadcastToPlayer(ctx)
 end)
 
-Remotes.StartWave.OnServerEvent:Connect(function(_player)
-	if not currentArena then
+Remotes.StartWave.OnServerEvent:Connect(function(player)
+	local ctx = contexts[player]
+	if not ctx or not ctx.inArena then
 		return
 	end
-	if WaveController.startWave() then
-		broadcastState()
+	local waveCtrl = ctx.arena.waveCtrl
+	if waveCtrl and waveCtrl:startWave() then
+		broadcastToPlayer(ctx)
 	end
 end)
 
 -- --- Gun shop ---
 
-Remotes.BuyGun.OnServerEvent:Connect(function(_player, gunKey)
+Remotes.BuyGun.OnServerEvent:Connect(function(player, gunKey)
 	if typeof(gunKey) ~= "string" then
+		return
+	end
+	local ctx = contexts[player]
+	if not ctx then
 		return
 	end
 	local def = Guns.defs[gunKey]
 	if not def then
 		return
 	end
-	if GameState.ownsGun(gunKey) then
+	if ctx.gameState:ownsGun(gunKey) then
 		return
 	end
-	if not GameState.trySpend(def.cost) then
+	if gunKey == GamePassConfig.PREMIUM_GUN_KEY then
+		if ctx.gameState:isAdmin() then
+			ctx.gameState:giveGun(gunKey)
+			ctx.gameState:equipGun(gunKey)
+			broadcastToPlayer(ctx)
+			return
+		end
+		local passId = GamePassConfig.PREMIUM_GUN.id
+		if passId > 0 then
+			pcall(function()
+				MarketplaceService:PromptGamePassPurchase(player, passId)
+			end)
+		elseif RunService:IsStudio() then
+			ctx.gameState:giveGun(gunKey)
+			if ctx.gameState:getEquippedGun() == nil then
+				ctx.gameState:equipGun(gunKey)
+			end
+			broadcastToPlayer(ctx)
+		end
 		return
 	end
-	GameState.giveGun(gunKey)
-	-- Auto-equip the first gun the player buys so they can immediately
-	-- start shooting without a second click.
-	if GameState.getEquippedGun() == nil then
-		GameState.equipGun(gunKey)
+	if gunKey == GamePassConfig.PREMIUM_GUN_2_KEY then
+		if ctx.gameState:isAdmin() then
+			ctx.gameState:giveGun(gunKey)
+			ctx.gameState:equipGun(gunKey)
+			broadcastToPlayer(ctx)
+			return
+		end
+		local passId = GamePassConfig.PREMIUM_GUN_2.id
+		if passId > 0 then
+			pcall(function()
+				MarketplaceService:PromptGamePassPurchase(player, passId)
+			end)
+		elseif RunService:IsStudio() then
+			ctx.gameState:giveGun(gunKey)
+			if ctx.gameState:getEquippedGun() == nil then
+				ctx.gameState:equipGun(gunKey)
+			end
+			broadcastToPlayer(ctx)
+		end
+		return
 	end
-	broadcastState()
+	if not ctx.gameState:isAdmin() and not ctx.gameState:trySpend(def.cost) then
+		return
+	end
+	ctx.gameState:giveGun(gunKey)
+	if ctx.gameState:getEquippedGun() == nil then
+		ctx.gameState:equipGun(gunKey)
+	end
+	broadcastToPlayer(ctx)
 end)
 
-Remotes.EquipGun.OnServerEvent:Connect(function(_player, gunKey)
+Remotes.EquipGun.OnServerEvent:Connect(function(player, gunKey)
 	if gunKey ~= nil and typeof(gunKey) ~= "string" then
 		return
 	end
-	if gunKey and not GameState.ownsGun(gunKey) then
+	local ctx = contexts[player]
+	if not ctx then
 		return
 	end
-	GameState.equipGun(gunKey)
-	broadcastState()
+	if gunKey and not ctx.gameState:ownsGun(gunKey) then
+		return
+	end
+	ctx.gameState:equipGun(gunKey)
+	broadcastToPlayer(ctx)
 end)
-
--- Per-player fire cooldown so clients can't exceed their gun's fire
--- rate even if they spam the remote.
-local lastFireAt: { [Player]: number } = {}
 
 Remotes.FireGun.OnServerEvent:Connect(function(player, targetPos)
 	if typeof(targetPos) ~= "Vector3" then
 		return
 	end
-	if not currentArena then
+	local ctx = contexts[player]
+	if not ctx or not ctx.inArena then
 		return
 	end
-	local state = GameState.get()
+	local state = ctx.gameState:get()
 	if state.gameOver then
 		return
 	end
@@ -449,10 +716,10 @@ Remotes.FireGun.OnServerEvent:Connect(function(player, targetPos)
 
 	local now = os.clock()
 	local minInterval = 1 / def.fireRate
-	if lastFireAt[player] and now - lastFireAt[player] < minInterval * 0.9 then
+	if now - ctx.lastFireAt < minInterval * 0.9 then
 		return
 	end
-	lastFireAt[player] = now
+	ctx.lastFireAt = now
 
 	local char = player.Character
 	if not char then
@@ -463,10 +730,6 @@ Remotes.FireGun.OnServerEvent:Connect(function(player, targetPos)
 		return
 	end
 
-	-- Origin: the player's right hand (where the gun grip is welded on
-	-- the client), pushed forward along the aim direction so the tracer
-	-- appears to exit the gun's muzzle instead of the center of the
-	-- character.
 	local rightHand = char:FindFirstChild("RightHand") :: BasePart?
 	local handPos = if rightHand
 		then rightHand.Position
@@ -478,15 +741,17 @@ Remotes.FireGun.OnServerEvent:Connect(function(player, targetPos)
 	local aimDir = aimDelta.Unit
 	local origin = handPos + aimDir * math.min(2.2, aimDelta.Magnitude * 0.5)
 
-	-- Only hit enemies.
-	local enemiesFolder = workspace:FindFirstChild("Enemies")
+	-- Only hit enemies in THIS player's arena. The enemyMgr.folder is
+	-- the per-arena Enemies subfolder, which means raycasts naturally
+	-- ignore other players' arenas even though they all share workspace.
+	local enemyMgr = ctx.arena.enemyMgr
+	if not enemyMgr then
+		return
+	end
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = enemiesFolder and { enemiesFolder } or {}
+	params.FilterDescendantsInstances = { enemyMgr.folder }
 
-	-- Cast `pellets` rays with random spread within the gun's cone.
-	-- Track any killing blow so the client can play an explosion at the
-	-- enemy's position when the final shot connects.
 	local hitPositions: { Vector3 } = {}
 	local killedAt: Vector3? = nil
 	for _ = 1, def.pellets do
@@ -501,20 +766,16 @@ Remotes.FireGun.OnServerEvent:Connect(function(player, targetPos)
 		end
 		local result = workspace:Raycast(origin, dir * def.range, params)
 		if result and result.Instance then
-			-- Walk up to the enemy Model (direct child of Enemies folder)
 			local node: Instance? = result.Instance
-			while node and node.Parent ~= enemiesFolder do
+			while node and node.Parent ~= enemyMgr.folder do
 				node = node.Parent
 			end
 			if node and node:IsA("Model") then
-				for _, enemy in EnemyManager.getAlive() do
+				for _, enemy in enemyMgr:getAlive() do
 					if enemy.model == node then
 						local willKill = (enemy.hp - def.damage) <= 0
-						-- "cannon" killer type plays the physics
-						-- explosion death animation, so the enemy
-						-- literally blows apart on the final shot.
 						local killerType = if willKill then "cannon" else "basic"
-						EnemyManager.damage(enemy, def.damage, killerType)
+						enemyMgr:damage(enemy, def.damage, killerType)
 						if willKill then
 							killedAt = enemy.root.Position
 						end
@@ -528,91 +789,113 @@ Remotes.FireGun.OnServerEvent:Connect(function(player, targetPos)
 		end
 	end
 
-	-- Broadcast visual effect: smoke trail from origin→hit for each
-	-- pellet, plus an explosion position if anything was killed.
-	Remotes.GunFired:FireAllClients(origin, hitPositions, def.tracerColor, killedAt)
-	broadcastState()
+	-- Only the shooting player needs to see their own tracer/smoke —
+	-- every arena is private, so no other player is present to witness
+	-- it. Was FireAllClients in single-player.
+	Remotes.GunFired:FireClient(player, origin, hitPositions, def.tracerColor, killedAt)
+	broadcastToPlayer(ctx)
 end)
 
-Players.PlayerRemoving:Connect(function(player)
-	lastFireAt[player] = nil
-end)
-
-Remotes.Restart.OnServerEvent:Connect(function(_player)
-	resetGame()
+Remotes.Restart.OnServerEvent:Connect(function(player)
+	local ctx = contexts[player]
+	if not ctx or not ctx.inArena then
+		return
+	end
+	ctx.arena:resetCurrentRealm()
+	broadcastToPlayer(ctx)
 end)
 
 Remotes.ReturnToLobby.OnServerEvent:Connect(function(player)
-	-- Persist the current realm's progress so re-entry resumes where
-	-- the player left off.
-	stashCurrentRealmProgress()
+	local ctx = contexts[player]
+	if not ctx then
+		return
+	end
+	ctx.arena:returnToLobby()
+	ctx.inArena = false
+	applyLobbyCameraLimit(player)
+	ctx.gameState:equipGun(nil)
 	local char = player.Character
 	if char then
 		char:PivotTo(lobbyData.spawnCFrame)
 	end
-	Remotes.EnterRealm:FireClient(player, "lobby")
+	Remotes.EnterRealm:FireClient(player, "lobby", Vector3.zero)
+	broadcastToPlayer(ctx)
 end)
 
 -- --- Main game tick ---
+-- Iterates every connected player's arena and runs one update step.
+-- Per-player state changes fire targeted broadcasts, not FireAllClients,
+-- so players in different realms never see each other's state.
+
+local AUTO_SAVE_INTERVAL = 60 -- seconds
 
 RunService.Heartbeat:Connect(function(dt)
-	if not currentArena then
-		return
-	end
+	for _, ctx in contexts do
+		if not ctx.inArena then
+			continue
+		end
+		local state = ctx.gameState:get()
+		if state.gameOver then
+			continue
+		end
 
-	local state = GameState.get()
-	if state.gameOver then
-		return
-	end
+		local enemyMgr = ctx.arena.enemyMgr
+		local towerMgr = ctx.arena.towerMgr
+		local waveCtrl = ctx.arena.waveCtrl
+		local castleCtx = ctx.arena.castleCtx
+		if not enemyMgr or not towerMgr or not waveCtrl or not castleCtx then
+			continue
+		end
 
-	EnemyManager.update(dt)
-	TowerManager.update(dt)
+		towerMgr:update(dt)
+		enemyMgr:update(dt)
 
-	-- Process enemy deaths (reward) and escapes (HP damage)
-	local stateChanged = false
-	for _, enemy in EnemyManager.getAll() do
-		if enemy.reachedEnd and not enemy.damaged then
-			enemy.damaged = true
-			local died = GameState.damage(1)
-			stateChanged = true
-			Castle.updateHp(GameState.get().hp, Config.STARTING_HP)
-			Castle.flashDamage()
-			if died then
-				Castle.explode()
-				Remotes.CastleDestroyed:FireAllClients(
-					(currentArena :: ArenaState).mapData.castleCenter
-				)
-				task.delay(4, function()
-					if GameState.get().gameOver then
-						Remotes.GameOver:FireAllClients()
-					end
-				end)
+		local stateChanged = false
+		for _, enemy in enemyMgr:getAll() do
+			if enemy.reachedEnd and not enemy.damaged then
+				enemy.damaged = true
+				local died = ctx.gameState:damage(enemy.castleDamage)
+				stateChanged = true
+				Castle.updateHp(castleCtx, ctx.gameState:get().hp, Config.STARTING_HP)
+				Castle.flashDamage(castleCtx)
+				if died then
+					Castle.explode(castleCtx)
+					Remotes.CastleDestroyed:FireClient(ctx.player, castleCtx.center)
+					local owner = ctx
+					task.delay(4, function()
+						if owner.gameState:get().gameOver then
+							Remotes.GameOver:FireClient(owner.player)
+						end
+					end)
+				end
+			elseif not enemy.alive and not enemy.reachedEnd and not enemy.rewarded then
+				enemy.rewarded = true
+				ctx.gameState:addGold(enemy.reward)
+				stateChanged = true
 			end
-		elseif not enemy.alive and not enemy.reachedEnd and not enemy.rewarded then
-			enemy.rewarded = true
-			GameState.addGold(enemy.reward)
+		end
+
+		local bonus = waveCtrl:update(dt)
+		if bonus > 0 then
 			stateChanged = true
+			Remotes.WaveComplete:FireClient(ctx.player, bonus)
+			local s = ctx.gameState:get()
+			if ctx.gameState:updateHighestWave(s.realm, s.waveNum) then
+				Lobby.refreshUnlocks(lobbyData, aggregatedHighestWaves())
+			end
 		end
-	end
 
-	-- Wave tick; bonus > 0 signals the wave finished this frame
-	local bonus = WaveController.update(dt)
-	if bonus > 0 then
-		stateChanged = true
-		Remotes.WaveComplete:FireAllClients(bonus)
-		-- Record the achievement on this realm and, if it beat the
-		-- previous best, refresh the lobby portals so any newly
-		-- unlocked realms visually update right away.
-		local s = GameState.get()
-		if GameState.updateHighestWave(s.realm, s.waveNum) then
-			Lobby.refreshUnlocks(lobbyData, GameState.getHighestWaves())
+		enemyMgr:cleanup()
+
+		-- Auto-save throttle: persist progress every AUTO_SAVE_INTERVAL
+		-- seconds so a crash doesn't lose more than a minute of play.
+		if os.clock() - ctx.lastSaveAt > AUTO_SAVE_INTERVAL then
+			task.spawn(persistContext, ctx)
 		end
-	end
 
-	EnemyManager.cleanup()
-
-	if stateChanged then
-		broadcastState()
+		if stateChanged then
+			broadcastToPlayer(ctx)
+		end
 	end
 end)
 

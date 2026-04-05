@@ -466,13 +466,731 @@ local function decoratePlasma(handle: Part)
 	weldTo(handle, iris, CFrame.new(0, 0.65, -2.98))
 end
 
+local function buildSmg(): Part
+	local grip = Instance.new("Part")
+	grip.Name = "Handle"
+	grip.Size = Vector3.new(0.4, 0.9, 0.35)
+	grip.Color = Color3.fromRGB(45, 40, 45)
+	grip.Material = Enum.Material.Metal
+	grip.Anchored = false
+	grip.CanCollide = false
+	grip.CanQuery = false
+	grip.CanTouch = false
+	grip.Massless = true
+	grip.TopSurface = Enum.SurfaceType.Smooth
+	grip.BottomSurface = Enum.SurfaceType.Smooth
+	return grip
+end
+
+local function decorateSmg(handle: Part)
+	local receiver = makePart(
+		"Receiver",
+		Vector3.new(0.4, 0.45, 1.1),
+		Color3.fromRGB(55, 55, 62),
+		Enum.Material.Metal
+	)
+	weldTo(handle, receiver, CFrame.new(0, 0.5, -0.25))
+	local barrel = makePart(
+		"Barrel",
+		Vector3.new(0.18, 0.18, 1.1),
+		Color3.fromRGB(30, 30, 36),
+		Enum.Material.Metal
+	)
+	weldTo(handle, barrel, CFrame.new(0, 0.5, -1.2))
+	local mag = makePart(
+		"Mag",
+		Vector3.new(0.25, 0.55, 0.22),
+		Color3.fromRGB(28, 28, 34),
+		Enum.Material.Metal
+	)
+	weldTo(handle, mag, CFrame.new(0, -0.4, -0.05))
+	local stock = makePart(
+		"Stock",
+		Vector3.new(0.28, 0.35, 0.7),
+		Color3.fromRGB(40, 40, 48),
+		Enum.Material.Metal
+	)
+	weldTo(handle, stock, CFrame.new(0, 0.55, 0.55))
+	local suppressor = makePart(
+		"Suppressor",
+		Vector3.new(0.28, 0.28, 0.5),
+		Color3.fromRGB(22, 22, 26),
+		Enum.Material.Metal
+	)
+	weldTo(handle, suppressor, CFrame.new(0, 0.5, -2))
+	-- Front sight blade
+	local frontSight = makePart(
+		"FrontSight",
+		Vector3.new(0.05, 0.16, 0.1),
+		Color3.fromRGB(20, 20, 24),
+		Enum.Material.Metal
+	)
+	weldTo(handle, frontSight, CFrame.new(0, 0.76, -1.6))
+end
+
+local function buildMinigun(): Part
+	local grip = Instance.new("Part")
+	grip.Name = "Handle"
+	grip.Size = Vector3.new(0.5, 1.1, 0.45)
+	grip.Color = Color3.fromRGB(38, 38, 44)
+	grip.Material = Enum.Material.Metal
+	grip.Anchored = false
+	grip.CanCollide = false
+	grip.CanQuery = false
+	grip.CanTouch = false
+	grip.Massless = true
+	grip.TopSurface = Enum.SurfaceType.Smooth
+	grip.BottomSurface = Enum.SurfaceType.Smooth
+	return grip
+end
+
+local function decorateMinigun(handle: Part)
+	-- Massive cylindrical body housing the rotating barrels
+	local body = makePart(
+		"Body",
+		Vector3.new(0.9, 0.9, 1.6),
+		Color3.fromRGB(60, 58, 66),
+		Enum.Material.Metal
+	)
+	weldTo(handle, body, CFrame.new(0, 0.7, -0.5))
+	-- Six rotary barrels arranged in a tight ring sticking out the front
+	for i = 0, 5 do
+		local angle = (i / 6) * math.pi * 2
+		local bx = math.cos(angle) * 0.22
+		local by = 0.7 + math.sin(angle) * 0.22
+		local barrel = makePart(
+			"RotBarrel_" .. i,
+			Vector3.new(0.16, 0.16, 2.2),
+			Color3.fromRGB(25, 25, 30),
+			Enum.Material.Metal
+		)
+		weldTo(handle, barrel, CFrame.new(bx, by, -2))
+	end
+	-- Front barrel collar ring
+	local collar = makePart(
+		"Collar",
+		Vector3.new(0.85, 0.85, 0.2),
+		Color3.fromRGB(45, 45, 52),
+		Enum.Material.Metal
+	)
+	weldTo(handle, collar, CFrame.new(0, 0.7, -1.4))
+	-- Ammo belt box on the side
+	local ammoBox = makePart(
+		"AmmoBox",
+		Vector3.new(0.35, 0.55, 0.7),
+		Color3.fromRGB(28, 28, 34),
+		Enum.Material.Metal
+	)
+	weldTo(handle, ammoBox, CFrame.new(0.5, 0.55, -0.1))
+	-- Rear stock
+	local stock = makePart(
+		"Stock",
+		Vector3.new(0.4, 0.55, 0.9),
+		Color3.fromRGB(38, 38, 44),
+		Enum.Material.Metal
+	)
+	weldTo(handle, stock, CFrame.new(0, 0.7, 0.85))
+	-- Glowing charge indicator on top
+	local indicator = makePart(
+		"Indicator",
+		Vector3.new(0.2, 0.1, 0.4),
+		Color3.fromRGB(255, 140, 50),
+		Enum.Material.Neon
+	)
+	weldTo(handle, indicator, CFrame.new(0, 1.2, -0.2))
+end
+
+local function buildStarfire(): Part
+	local grip = Instance.new("Part")
+	grip.Name = "Handle"
+	grip.Size = Vector3.new(0.45, 1.1, 0.4)
+	grip.Color = Color3.fromRGB(60, 52, 100)
+	grip.Material = Enum.Material.Metal
+	grip.Anchored = false
+	grip.CanCollide = false
+	grip.CanQuery = false
+	grip.CanTouch = false
+	grip.Massless = true
+	grip.TopSurface = Enum.SurfaceType.Smooth
+	grip.BottomSurface = Enum.SurfaceType.Smooth
+	return grip
+end
+
+local function decorateStarfire(handle: Part)
+	-- Sleek void-metal chassis
+	local chassis = makePart(
+		"Chassis",
+		Vector3.new(0.55, 0.7, 1.8),
+		Color3.fromRGB(80, 70, 130),
+		Enum.Material.Metal
+	)
+	weldTo(handle, chassis, CFrame.new(0, 0.65, -0.4))
+	-- Elongated crystal barrel with a glowing core
+	local barrel = makePart(
+		"Barrel",
+		Vector3.new(0.3, 0.3, 3.2),
+		Color3.fromRGB(50, 45, 85),
+		Enum.Material.Metal
+	)
+	weldTo(handle, barrel, CFrame.new(0, 0.65, -2.6))
+	local core = makePart(
+		"Core",
+		Vector3.new(0.22, 0.22, 3),
+		Color3.fromRGB(255, 220, 140),
+		Enum.Material.Neon
+	)
+	weldTo(handle, core, CFrame.new(0, 0.65, -2.6))
+	core.Transparency = 0.3
+	-- Glowing crystal at the muzzle tip
+	local muzzleCrystal = makePart(
+		"MuzzleCrystal",
+		Vector3.new(0.5, 0.5, 0.4),
+		Color3.fromRGB(255, 230, 160),
+		Enum.Material.Neon
+	)
+	weldTo(handle, muzzleCrystal, CFrame.new(0, 0.65, -4.3))
+	local muzzleLight = Instance.new("PointLight")
+	muzzleLight.Color = Color3.fromRGB(255, 220, 140)
+	muzzleLight.Range = 8
+	muzzleLight.Brightness = 2
+	muzzleLight.Parent = muzzleCrystal
+	-- Long scope with orange neon lens
+	local scope = makePart(
+		"Scope",
+		Vector3.new(0.4, 0.4, 1.8),
+		Color3.fromRGB(28, 24, 50),
+		Enum.Material.Metal
+	)
+	weldTo(handle, scope, CFrame.new(0, 1.05, -0.5))
+	local lens = makePart(
+		"Lens",
+		Vector3.new(0.32, 0.32, 0.1),
+		Color3.fromRGB(255, 210, 130),
+		Enum.Material.Neon
+	)
+	weldTo(handle, lens, CFrame.new(0, 1.05, -1.4))
+	-- Stock
+	local stock = makePart(
+		"Stock",
+		Vector3.new(0.4, 0.6, 1.2),
+		Color3.fromRGB(60, 52, 100),
+		Enum.Material.Metal
+	)
+	weldTo(handle, stock, CFrame.new(0, 0.65, 0.85))
+	-- Twin glowing fins mounted on the sides of the chassis
+	for i = 1, 2 do
+		local side = if i == 1 then -1 else 1
+		local fin = makePart(
+			"Fin_" .. i,
+			Vector3.new(0.1, 0.55, 1.4),
+			Color3.fromRGB(255, 200, 120),
+			Enum.Material.Neon
+		)
+		fin.Transparency = 0.25
+		weldTo(handle, fin, CFrame.new(side * 0.4, 0.65, -0.9))
+	end
+	-- Magazine
+	local mag = makePart(
+		"Mag",
+		Vector3.new(0.32, 0.55, 0.6),
+		Color3.fromRGB(40, 36, 70),
+		Enum.Material.Metal
+	)
+	weldTo(handle, mag, CFrame.new(0, 0.05, -0.2))
+end
+
+-- --- Revolver: 6-shooter with wooden grip and heavy frame ---
+
+local function buildRevolver(): Part
+	local grip = Instance.new("Part")
+	grip.Name = "Handle"
+	grip.Size = Vector3.new(0.42, 1, 0.32)
+	grip.Color = Color3.fromRGB(80, 45, 20)
+	grip.Material = Enum.Material.Wood
+	grip.Anchored = false
+	grip.CanCollide = false
+	grip.CanQuery = false
+	grip.CanTouch = false
+	grip.Massless = true
+	grip.TopSurface = Enum.SurfaceType.Smooth
+	grip.BottomSurface = Enum.SurfaceType.Smooth
+	return grip
+end
+
+local function decorateRevolver(handle: Part)
+	local frame = makePart(
+		"Frame",
+		Vector3.new(0.48, 0.6, 0.95),
+		Color3.fromRGB(180, 160, 70),
+		Enum.Material.Metal
+	)
+	weldTo(handle, frame, CFrame.new(0, 0.55, -0.2))
+	local cylinder = makePart(
+		"Cylinder",
+		Vector3.new(0.58, 0.58, 0.6),
+		Color3.fromRGB(200, 180, 90),
+		Enum.Material.Metal
+	)
+	weldTo(handle, cylinder, CFrame.new(0, 0.55, -0.35))
+	for i = 1, 6 do
+		local angle = (i / 6) * math.pi * 2
+		local chamber = makePart(
+			"Chamber_" .. i,
+			Vector3.new(0.12, 0.12, 0.62),
+			Color3.fromRGB(30, 20, 10),
+			Enum.Material.Metal
+		)
+		local ox = math.cos(angle) * 0.19
+		local oy = math.sin(angle) * 0.19
+		weldTo(handle, chamber, CFrame.new(ox, 0.55 + oy, -0.35))
+	end
+	local barrel = makePart(
+		"Barrel",
+		Vector3.new(0.28, 0.32, 1.6),
+		Color3.fromRGB(45, 45, 50),
+		Enum.Material.Metal
+	)
+	weldTo(handle, barrel, CFrame.new(0, 0.55, -1.4))
+	local sightRib = makePart(
+		"SightRib",
+		Vector3.new(0.08, 0.08, 1.5),
+		Color3.fromRGB(30, 30, 34),
+		Enum.Material.Metal
+	)
+	weldTo(handle, sightRib, CFrame.new(0, 0.75, -1.4))
+	local frontSight = makePart(
+		"FrontSight",
+		Vector3.new(0.06, 0.16, 0.1),
+		Color3.fromRGB(20, 20, 24),
+		Enum.Material.Metal
+	)
+	weldTo(handle, frontSight, CFrame.new(0, 0.87, -2.15))
+	local hammer = makePart(
+		"Hammer",
+		Vector3.new(0.14, 0.2, 0.2),
+		Color3.fromRGB(40, 40, 46),
+		Enum.Material.Metal
+	)
+	weldTo(handle, hammer, CFrame.new(0, 0.82, 0.2))
+	local trigger = makePart(
+		"Trigger",
+		Vector3.new(0.06, 0.2, 0.08),
+		Color3.fromRGB(30, 30, 36),
+		Enum.Material.Metal
+	)
+	weldTo(handle, trigger, CFrame.new(0, 0.2, -0.1))
+	local triggerGuard = makePart(
+		"TriggerGuard",
+		Vector3.new(0.08, 0.32, 0.42),
+		Color3.fromRGB(180, 160, 70),
+		Enum.Material.Metal
+	)
+	weldTo(handle, triggerGuard, CFrame.new(0, 0.1, -0.05))
+end
+
+-- --- Flamethrower: fuel tank backpack + nozzle + pilot light ---
+
+local function buildFlamethrower(): Part
+	local grip = Instance.new("Part")
+	grip.Name = "Handle"
+	grip.Size = Vector3.new(0.42, 1, 0.35)
+	grip.Color = Color3.fromRGB(35, 35, 40)
+	grip.Material = Enum.Material.Metal
+	grip.Anchored = false
+	grip.CanCollide = false
+	grip.CanQuery = false
+	grip.CanTouch = false
+	grip.Massless = true
+	grip.TopSurface = Enum.SurfaceType.Smooth
+	grip.BottomSurface = Enum.SurfaceType.Smooth
+	return grip
+end
+
+local function decorateFlamethrower(handle: Part)
+	local body = makePart(
+		"Body",
+		Vector3.new(0.5, 0.55, 1.3),
+		Color3.fromRGB(95, 55, 25),
+		Enum.Material.Metal
+	)
+	weldTo(handle, body, CFrame.new(0, 0.55, -0.2))
+	-- Large main nozzle tube
+	local nozzle = makePart(
+		"Nozzle",
+		Vector3.new(0.48, 0.48, 2.2),
+		Color3.fromRGB(45, 28, 14),
+		Enum.Material.Metal
+	)
+	weldTo(handle, nozzle, CFrame.new(0, 0.55, -1.7))
+	-- Flared tip
+	local tip = makePart(
+		"Tip",
+		Vector3.new(0.72, 0.72, 0.35),
+		Color3.fromRGB(25, 15, 8),
+		Enum.Material.Metal
+	)
+	weldTo(handle, tip, CFrame.new(0, 0.55, -2.95))
+	-- Glowing pilot flame at the tip
+	local pilot = makePart(
+		"Pilot",
+		Vector3.new(0.2, 0.35, 0.2),
+		Color3.fromRGB(255, 150, 40),
+		Enum.Material.Neon
+	)
+	weldTo(handle, pilot, CFrame.new(0.35, 0.7, -2.9))
+	local pilotLight = Instance.new("PointLight")
+	pilotLight.Color = Color3.fromRGB(255, 140, 30)
+	pilotLight.Range = 6
+	pilotLight.Brightness = 1.4
+	pilotLight.Parent = pilot
+	-- Fuel tanks bolted to the underside
+	local tankL = makePart(
+		"TankL",
+		Vector3.new(0.3, 0.8, 0.7),
+		Color3.fromRGB(180, 40, 30),
+		Enum.Material.Metal
+	)
+	weldTo(handle, tankL, CFrame.new(-0.2, 0.1, -0.3))
+	local tankR = makePart(
+		"TankR",
+		Vector3.new(0.3, 0.8, 0.7),
+		Color3.fromRGB(180, 40, 30),
+		Enum.Material.Metal
+	)
+	weldTo(handle, tankR, CFrame.new(0.2, 0.1, -0.3))
+	-- Fuel hose arcing from tank to body
+	local hose = makePart(
+		"Hose",
+		Vector3.new(0.14, 0.14, 0.7),
+		Color3.fromRGB(28, 28, 32),
+		Enum.Material.Metal
+	)
+	weldTo(handle, hose, CFrame.new(0, -0.05, 0.1) * CFrame.Angles(math.rad(35), 0, 0))
+	-- Valve wheel on top
+	local valve = makePart(
+		"Valve",
+		Vector3.new(0.32, 0.12, 0.32),
+		Color3.fromRGB(220, 180, 80),
+		Enum.Material.Metal
+	)
+	weldTo(handle, valve, CFrame.new(0, 0.95, -0.05))
+end
+
+-- --- Railgun: long rectangular rail assembly with exposed coils ---
+
+local function buildRailgun(): Part
+	local grip = Instance.new("Part")
+	grip.Name = "Handle"
+	grip.Size = Vector3.new(0.42, 1.1, 0.35)
+	grip.Color = Color3.fromRGB(30, 32, 42)
+	grip.Material = Enum.Material.Metal
+	grip.Anchored = false
+	grip.CanCollide = false
+	grip.CanQuery = false
+	grip.CanTouch = false
+	grip.Massless = true
+	grip.TopSurface = Enum.SurfaceType.Smooth
+	grip.BottomSurface = Enum.SurfaceType.Smooth
+	return grip
+end
+
+local function decorateRailgun(handle: Part)
+	-- Main chassis block
+	local chassis = makePart(
+		"Chassis",
+		Vector3.new(0.55, 0.75, 2.4),
+		Color3.fromRGB(50, 55, 70),
+		Enum.Material.Metal
+	)
+	weldTo(handle, chassis, CFrame.new(0, 0.7, -0.6))
+	-- Top rail
+	local railTop = makePart(
+		"RailTop",
+		Vector3.new(0.22, 0.22, 4.2),
+		Color3.fromRGB(180, 190, 220),
+		Enum.Material.Metal
+	)
+	weldTo(handle, railTop, CFrame.new(0, 1.1, -2))
+	-- Bottom rail
+	local railBot = makePart(
+		"RailBot",
+		Vector3.new(0.22, 0.22, 4.2),
+		Color3.fromRGB(180, 190, 220),
+		Enum.Material.Metal
+	)
+	weldTo(handle, railBot, CFrame.new(0, 0.3, -2))
+	-- Glowing coil between the rails
+	local coil = makePart(
+		"Coil",
+		Vector3.new(0.18, 0.6, 3.8),
+		Color3.fromRGB(100, 220, 255),
+		Enum.Material.Neon
+	)
+	coil.Transparency = 0.3
+	weldTo(handle, coil, CFrame.new(0, 0.7, -2))
+	-- Five ribbed coil rings along the barrel for silhouette detail
+	for i = 0, 4 do
+		local z = -0.6 - (i * 0.75)
+		local ring = makePart(
+			"Ring_" .. i,
+			Vector3.new(0.42, 0.42, 0.14),
+			Color3.fromRGB(80, 100, 140),
+			Enum.Material.Metal
+		)
+		weldTo(handle, ring, CFrame.new(0, 0.7, z))
+	end
+	-- Capacitor bank on top
+	local capacitor = makePart(
+		"Capacitor",
+		Vector3.new(0.42, 0.32, 0.8),
+		Color3.fromRGB(40, 50, 70),
+		Enum.Material.Metal
+	)
+	weldTo(handle, capacitor, CFrame.new(0, 1.35, -0.2))
+	local capLight = makePart(
+		"CapLight",
+		Vector3.new(0.12, 0.08, 0.62),
+		Color3.fromRGB(100, 220, 255),
+		Enum.Material.Neon
+	)
+	weldTo(handle, capLight, CFrame.new(0, 1.52, -0.2))
+	-- Stock
+	local stock = makePart(
+		"Stock",
+		Vector3.new(0.38, 0.55, 1),
+		Color3.fromRGB(30, 32, 42),
+		Enum.Material.Metal
+	)
+	weldTo(handle, stock, CFrame.new(0, 0.65, 0.75))
+	-- Scope
+	local scope = makePart(
+		"Scope",
+		Vector3.new(0.3, 0.3, 0.9),
+		Color3.fromRGB(20, 24, 34),
+		Enum.Material.Metal
+	)
+	weldTo(handle, scope, CFrame.new(0, 1.3, 0.2))
+	local scopeLens = makePart(
+		"Lens",
+		Vector3.new(0.24, 0.24, 0.08),
+		Color3.fromRGB(120, 220, 255),
+		Enum.Material.Neon
+	)
+	weldTo(handle, scopeLens, CFrame.new(0, 1.3, -0.3))
+	local capLightSrc = Instance.new("PointLight")
+	capLightSrc.Color = Color3.fromRGB(100, 220, 255)
+	capLightSrc.Range = 8
+	capLightSrc.Brightness = 1.6
+	capLightSrc.Parent = capLight
+end
+
+-- --- Void Reaper: premium auto-shotgun with twin barrels + void glow ---
+
+local function buildVoidReaper(): Part
+	local grip = Instance.new("Part")
+	grip.Name = "Handle"
+	grip.Size = Vector3.new(0.44, 1, 0.38)
+	grip.Color = Color3.fromRGB(30, 12, 50)
+	grip.Material = Enum.Material.Metal
+	grip.Anchored = false
+	grip.CanCollide = false
+	grip.CanQuery = false
+	grip.CanTouch = false
+	grip.Massless = true
+	grip.TopSurface = Enum.SurfaceType.Smooth
+	grip.BottomSurface = Enum.SurfaceType.Smooth
+	return grip
+end
+
+local function decorateVoidReaper(handle: Part)
+	local chassis = makePart(
+		"Chassis",
+		Vector3.new(0.6, 0.78, 1.6),
+		Color3.fromRGB(55, 25, 90),
+		Enum.Material.Metal
+	)
+	weldTo(handle, chassis, CFrame.new(0, 0.6, -0.4))
+	-- Twin wide barrels side-by-side
+	local barrelL = makePart(
+		"BarrelL",
+		Vector3.new(0.35, 0.35, 2.4),
+		Color3.fromRGB(28, 12, 50),
+		Enum.Material.Metal
+	)
+	weldTo(handle, barrelL, CFrame.new(-0.18, 0.7, -1.6))
+	local barrelR = makePart(
+		"BarrelR",
+		Vector3.new(0.35, 0.35, 2.4),
+		Color3.fromRGB(28, 12, 50),
+		Enum.Material.Metal
+	)
+	weldTo(handle, barrelR, CFrame.new(0.18, 0.7, -1.6))
+	-- Glowing void cores inside each barrel
+	local coreL = makePart(
+		"CoreL",
+		Vector3.new(0.22, 0.22, 2.2),
+		Color3.fromRGB(200, 80, 255),
+		Enum.Material.Neon
+	)
+	coreL.Transparency = 0.2
+	weldTo(handle, coreL, CFrame.new(-0.18, 0.7, -1.6))
+	local coreR = makePart(
+		"CoreR",
+		Vector3.new(0.22, 0.22, 2.2),
+		Color3.fromRGB(200, 80, 255),
+		Enum.Material.Neon
+	)
+	coreR.Transparency = 0.2
+	weldTo(handle, coreR, CFrame.new(0.18, 0.7, -1.6))
+	-- Muzzle shroud crystal
+	local muzzle = makePart(
+		"Muzzle",
+		Vector3.new(0.78, 0.6, 0.45),
+		Color3.fromRGB(180, 70, 240),
+		Enum.Material.Neon
+	)
+	muzzle.Transparency = 0.15
+	weldTo(handle, muzzle, CFrame.new(0, 0.7, -2.95))
+	local muzzleLight = Instance.new("PointLight")
+	muzzleLight.Color = Color3.fromRGB(200, 80, 255)
+	muzzleLight.Range = 10
+	muzzleLight.Brightness = 2
+	muzzleLight.Parent = muzzle
+	-- Drum magazine under the chassis
+	local drum = makePart(
+		"Drum",
+		Vector3.new(0.75, 0.75, 0.6),
+		Color3.fromRGB(40, 18, 70),
+		Enum.Material.Metal
+	)
+	weldTo(handle, drum, CFrame.new(0, 0.08, -0.3))
+	local drumGlow = makePart(
+		"DrumGlow",
+		Vector3.new(0.4, 0.4, 0.62),
+		Color3.fromRGB(200, 80, 255),
+		Enum.Material.Neon
+	)
+	drumGlow.Transparency = 0.4
+	weldTo(handle, drumGlow, CFrame.new(0, 0.08, -0.3))
+	-- Twin glowing spines along the top
+	for i = 1, 2 do
+		local side = if i == 1 then -1 else 1
+		local spine = makePart(
+			"Spine_" .. i,
+			Vector3.new(0.08, 0.35, 1.3),
+			Color3.fromRGB(220, 100, 255),
+			Enum.Material.Neon
+		)
+		spine.Transparency = 0.2
+		weldTo(handle, spine, CFrame.new(side * 0.28, 1.08, -0.5))
+	end
+	-- Stock
+	local stock = makePart(
+		"Stock",
+		Vector3.new(0.38, 0.6, 0.95),
+		Color3.fromRGB(30, 12, 50),
+		Enum.Material.Metal
+	)
+	weldTo(handle, stock, CFrame.new(0, 0.55, 0.7))
+	-- Trigger
+	local trigger = makePart(
+		"Trigger",
+		Vector3.new(0.06, 0.22, 0.1),
+		Color3.fromRGB(220, 100, 255),
+		Enum.Material.Neon
+	)
+	weldTo(handle, trigger, CFrame.new(0, 0.18, -0.1))
+end
+
+-- --- Starter: rusty dented pistol. Visually the same silhouette as the
+-- regular pistol but rust-brown colored and missing detail, so it reads
+-- as a hand-me-down weapon the player should upgrade away from.
+
+local function buildStarter(): Part
+	local grip = Instance.new("Part")
+	grip.Name = "Handle"
+	grip.Size = Vector3.new(0.38, 0.85, 0.28)
+	grip.Color = Color3.fromRGB(60, 40, 20)
+	grip.Material = Enum.Material.Wood
+	grip.Anchored = false
+	grip.CanCollide = false
+	grip.CanQuery = false
+	grip.CanTouch = false
+	grip.Massless = true
+	grip.TopSurface = Enum.SurfaceType.Smooth
+	grip.BottomSurface = Enum.SurfaceType.Smooth
+	return grip
+end
+
+local function decorateStarter(handle: Part)
+	-- Rusty slide
+	local slide = makePart(
+		"Slide",
+		Vector3.new(0.4, 0.4, 1.1),
+		Color3.fromRGB(110, 75, 45),
+		Enum.Material.CorrodedMetal
+	)
+	weldTo(handle, slide, CFrame.new(0, 0.52, -0.3))
+	-- Short dented barrel
+	local barrel = makePart(
+		"Barrel",
+		Vector3.new(0.2, 0.2, 0.45),
+		Color3.fromRGB(80, 55, 30),
+		Enum.Material.CorrodedMetal
+	)
+	weldTo(handle, barrel, CFrame.new(0, 0.52, -0.92))
+	-- Minimal trigger guard
+	local guard = makePart(
+		"Guard",
+		Vector3.new(0.1, 0.3, 0.38),
+		Color3.fromRGB(65, 45, 25),
+		Enum.Material.CorrodedMetal
+	)
+	weldTo(handle, guard, CFrame.new(0, 0.14, -0.18))
+	-- Tiny magazine
+	local magazine = makePart(
+		"Mag",
+		Vector3.new(0.24, 0.32, 0.2),
+		Color3.fromRGB(45, 30, 15),
+		Enum.Material.CorrodedMetal
+	)
+	weldTo(handle, magazine, CFrame.new(0, -0.45, -0.05))
+end
+
 local GUN_BUILDERS: { [string]: { build: () -> Part, decorate: (Part) -> () } } = {
+	starter = { build = buildStarter, decorate = decorateStarter },
 	pistol = { build = buildPistol, decorate = decoratePistol },
 	rifle = { build = buildRifle, decorate = decorateRifle },
 	shotgun = { build = buildShotgun, decorate = decorateShotgun },
 	sniper = { build = buildSniper, decorate = decorateSniper },
 	plasma = { build = buildPlasma, decorate = decoratePlasma },
+	smg = { build = buildSmg, decorate = decorateSmg },
+	minigun = { build = buildMinigun, decorate = decorateMinigun },
+	starfire = { build = buildStarfire, decorate = decorateStarfire },
+	revolver = { build = buildRevolver, decorate = decorateRevolver },
+	flamethrower = { build = buildFlamethrower, decorate = decorateFlamethrower },
+	railgun = { build = buildRailgun, decorate = decorateRailgun },
+	void_reaper = { build = buildVoidReaper, decorate = decorateVoidReaper },
 }
+
+-- Builds a display-only copy of a gun as a Model (no Tool wrapper) so
+-- shops / previews can drop it into a ViewportFrame. The decorations use
+-- weldTo which attaches to handle.Parent, so we parent the handle to the
+-- model before calling decorate.
+function PlayerGun.buildDisplayModel(gunKey: string): Model?
+	local builder = GUN_BUILDERS[gunKey]
+	if not builder then
+		return nil
+	end
+	local model = Instance.new("Model")
+	model.Name = "Display_" .. gunKey
+	local handle = builder.build()
+	handle.Name = "Handle"
+	handle.Parent = model
+	builder.decorate(handle)
+	model.PrimaryPart = handle
+	return model
+end
 
 -- --- Tool lifecycle ---
 

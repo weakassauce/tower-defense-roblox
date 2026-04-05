@@ -37,12 +37,19 @@ local function makePart(parent: Instance, name: string): Part
 	return p
 end
 
-function Map.build(realmName: string?): MapData
-	local existing = workspace:FindFirstChild("Map")
-	if existing then
-		existing:Destroy()
-	end
-
+-- Build the full arena map for `realmName` under `parentFolder`, then
+-- translate every Part by `originOffset` so it sits at the player's
+-- per-slot world position. Returns a MapData struct with already-
+-- offset waypoints + castle center. The function used to parent into
+-- workspace.Map and assume a single arena; the multiplayer refactor
+-- decoupled it so each player can own a separate Map folder.
+--
+-- Note: Config.PATH is assumed to already reflect the target realm's
+-- path when this is called (set by the caller via Config.setCurrentPath
+-- immediately before). This is safe because Map.build runs atomically
+-- (no yields) inside the arena controller, so the per-player path
+-- never races against another arena's build.
+function Map.build(realmName: string?, parentFolder: Instance, originOffset: Vector3): MapData
 	local realm = realmName or "defense"
 	local palette = RealmDefs.get(realm).palette
 
@@ -54,7 +61,6 @@ function Map.build(realmName: string?): MapData
 
 	local mapFolder = Instance.new("Folder")
 	mapFolder.Name = "Map"
-	mapFolder.Parent = workspace
 
 	-- --- Ground platform ---
 	-- Two radii:
@@ -256,6 +262,26 @@ function Map.build(realmName: string?): MapData
 
 	MapThemes.buildGate(realm, themeCtx, firstWp)
 	MapThemes.buildSurround(realm, themeCtx)
+
+	-- Translate every Part in the finished map by originOffset so the
+	-- whole arena sits at the player's slot position. Done as a single
+	-- post-build pass rather than threading the offset through every
+	-- builder (would have been a ~2000-line change across Map +
+	-- MapThemes). Also shifts the returned waypoints and castleCenter
+	-- so downstream systems receive already-offset coordinates.
+	if originOffset.Magnitude > 0 then
+		for _, desc in mapFolder:GetDescendants() do
+			if desc:IsA("BasePart") then
+				desc.Position = desc.Position + originOffset
+			end
+		end
+		for i, wp in waypoints do
+			waypoints[i] = wp + originOffset
+		end
+		castleCenter = castleCenter + originOffset
+	end
+
+	mapFolder.Parent = parentFolder
 
 	return {
 		folder = mapFolder,

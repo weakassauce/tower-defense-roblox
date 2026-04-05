@@ -50,6 +50,10 @@ Remotes.ReturnToLobby = getOrMakeRemote("ReturnToLobby")
 Remotes.BuyGun = getOrMakeRemote("BuyGun")
 Remotes.EquipGun = getOrMakeRemote("EquipGun")
 Remotes.FireGun = getOrMakeRemote("FireGun")
+-- Client submits a cheat code; server validates and, on match, flips
+-- the player into admin mode (all towers / guns free, premium items
+-- owned). The server rejects invalid codes silently.
+Remotes.UnlockAdmin = getOrMakeRemote("UnlockAdmin")
 
 -- Server → Client (state sync + events)
 Remotes.StateUpdate = getOrMakeRemote("StateUpdate")

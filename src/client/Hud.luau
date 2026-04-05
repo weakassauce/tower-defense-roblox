@@ -22,6 +22,7 @@ local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local RealmDefs = require(ReplicatedStorage.Shared.RealmDefs)
 local Guns = require(ReplicatedStorage.Shared.Guns)
 local GamePassConfig = require(ReplicatedStorage.Shared.GamePassConfig)
+local PlayerGun = require(script.Parent.PlayerGun)
 
 local MarketplaceService = game:GetService("MarketplaceService")
 
@@ -41,19 +42,35 @@ local COLOR_DANGER = Color3.fromRGB(239, 83, 80)
 -- realm signature towers in RealmDefs.ORDER, and finally the premium
 -- game-pass tower. Signature towers are hidden by default and only
 -- shown by Hud.setRealmTowers().
+-- Full ordered list of every tower type the HUD might need to render.
+-- buildTowerPanel creates a button for each entry (starting hidden), and
+-- setRealmTowers later toggles visibility per realm. Keep this in sync
+-- with RealmDefs.UNIVERSAL_TOWERS + every realm's signatureTowers +
+-- PREMIUM_TOWER so no signature tower is missing a button.
 local TOWER_ORDER = {
+	-- Universal base towers (in every realm)
 	"basic",
 	"sniper",
 	"cannon",
 	"freeze",
-	"lightning",
-	"poison",
 	"flame",
-	"paladin",
+	-- Frost signatures
 	"icelance",
+	"blizzard_mage",
+	"ice_cannon",
+	-- Desert signatures
 	"sandstorm",
+	"sun_archer",
+	"pyre_mage",
+	-- Forest signatures
 	"thornwall",
+	"grove_archer",
+	"venom_cloud",
+	-- Space signatures
 	"plasma",
+	"void_cannon",
+	"tesla_storm",
+	-- Premium
 	"celestial",
 }
 
@@ -131,6 +148,16 @@ local towerButtons: { [string]: TextButton } = {}
 local towerStrokes: { [string]: UIStroke } = {}
 local towerCostLabels: { [string]: TextLabel } = {}
 local inventoryBtn: TextButton
+-- Pickup mode: when ON, the next tap on a placed tower sends it to
+-- inventory (mobile-friendly equivalent of right-click pickup). The
+-- mode auto-disables after a successful pickup or when the button is
+-- tapped again. Desktop players can keep using right-click as a
+-- shortcut — both paths fire the same PickupTower remote.
+local pickupBtn: TextButton
+local pickupBtnStroke: UIStroke
+local pickupBtnIcon: TextLabel
+local pickupBtnTip: TextLabel
+local pickupModeEnabled = false
 local inventoryCountLabel: TextLabel
 local inventoryPanel: Frame
 local inventoryList: ScrollingFrame
@@ -141,13 +168,37 @@ local gunToggleBtn: TextButton
 local gunToggleIcon: TextLabel
 local gunToggleTip: TextLabel
 local shopPanel: Frame
+-- Dedicated Robux shop: Celestial tower + Starfire + Void Reaper guns
+-- at the top, and 4 cash-pack Developer Products at the bottom. Opens
+-- via a side-column button with a 💎 icon. Independent from the gun
+-- shop (shopPanel) so premium items have a home separate from the
+-- gold-priced progression shop.
+local robuxShopPanel: Frame
+local robuxShopBtn: TextButton
+local onBuyCashPackCallback: ((number) -> ())? = nil
 local shopCards: { [string]: { card: Frame, actionBtn: TextButton, statusLabel: TextLabel } } = {}
+-- Detail pane refs for the shop preview (viewport + labels). Populated
+-- in buildShopPanel and refreshed whenever the selected gun changes.
+local shopDetailEmpty: TextLabel? = nil
+local shopDetailContent: Frame? = nil
+local shopViewportWorld: WorldModel? = nil
+local shopCurrentPreviewModel: Model? = nil
+local shopDetailName: TextLabel? = nil
+local shopDetailStats: TextLabel? = nil
+local shopDetailDesc: TextLabel? = nil
+local shopDetailCost: TextLabel? = nil
 -- Remembers the last gun the player had equipped, so the quick toggle
 -- button can re-equip the same gun after unequipping.
 local lastEquippedGun: string? = nil
 -- Forward-declared so Hud.mount / Hud.onStateUpdate (defined earlier in
 -- file order) can call it; the actual body is assigned further down.
 local updateShop: () -> ()
+-- Forward-declared so buildSideButtons (which wires shopBtn.Activated)
+-- can reach into the shop selection logic defined later in the file.
+local selectShopGun: (gunKey: string?) -> ()
+-- Forward-declared so Hud.onStateUpdate can notify listeners when an
+-- auto-clear selection transition happens (e.g. on gun equip).
+local fireSelectionChanged: () -> ()
 local autoWaveBtn: TextButton
 local autoWaveEnabled = false
 local homeScreen: Frame
@@ -167,6 +218,11 @@ local crosshairShouldShow = false
 -- every tracked HUD button. When this is > 0 the crosshair hides and
 -- the system cursor comes back so the player can precisely click UI.
 local hudHoverCount = 0
+-- Fired whenever hudHoverCount crosses zero: called with `true` when
+-- the pointer enters the first tracked button, and `false` when it
+-- leaves the last. init.client uses this to auto-holster the player's
+-- gun so it doesn't get in the way of clicking UI.
+local onHoverTransition: ((boolean) -> ())? = nil
 
 -- --- Builder helpers ---
 
@@ -461,10 +517,30 @@ end
 
 -- --- Section: inventory (backpack + panel) ---
 
+-- The 5 right-side buttons are stacked as a vertically-centered column:
+-- 5 × 64 tall + 4 × 10 gap = 360 total. Top button y-offset = -180 from
+-- the screen center; each subsequent button adds 74 (64 + 10). These
+-- constants are shared by buildInventory + buildSideButtons below.
+local SIDE_BTN_X = -84
+local SIDE_BTN_SIZE = 64
+local SIDE_BTN_GAP = 10
+-- 7 buttons: inventory, return-to-lobby, camera toggle, gun shop, gun
+-- holster/equip, pickup mode, robux shop. Pickup is the mobile
+-- equivalent of the right-click pickup shortcut — tap it, then tap a
+-- placed tower. The robux shop sits at the bottom of the column and
+-- uses a diamond icon so it reads as "premium purchases" at a glance.
+local SIDE_BTN_COUNT = 7
+local SIDE_COLUMN_HEIGHT = SIDE_BTN_COUNT * SIDE_BTN_SIZE + (SIDE_BTN_COUNT - 1) * SIDE_BTN_GAP
+local SIDE_BTN_TOP = -SIDE_COLUMN_HEIGHT / 2
+
+local function sideButtonY(index: number): number
+	return SIDE_BTN_TOP + (index - 1) * (SIDE_BTN_SIZE + SIDE_BTN_GAP)
+end
+
 local function buildInventory(parent: Instance)
 	inventoryBtn = makeTextButton(parent, "InventoryBtn", "🎒")
-	inventoryBtn.Size = UDim2.fromOffset(64, 64)
-	inventoryBtn.Position = UDim2.new(1, -84, 0, 20)
+	inventoryBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
+	inventoryBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(1))
 	inventoryBtn.TextSize = 36
 	inventoryBtn.BackgroundColor3 = COLOR_BG_DARK
 	inventoryBtn.BackgroundTransparency = 0.1
@@ -486,9 +562,13 @@ local function buildInventory(parent: Instance)
 	inventoryCountLabel.TextXAlignment = Enum.TextXAlignment.Center
 	inventoryCountLabel.TextColor3 = COLOR_TEXT
 
+	-- Anchor the panel to the right side of the inventory button so the
+	-- panel pops to the left of the button column and tracks the button's
+	-- vertical-center position across screen sizes.
 	inventoryPanel = makeFrame(parent, "InventoryPanel")
 	inventoryPanel.Size = UDim2.fromOffset(320, 560)
-	inventoryPanel.Position = UDim2.new(1, -340, 0, 100)
+	inventoryPanel.AnchorPoint = Vector2.new(1, 0.5)
+	inventoryPanel.Position = UDim2.new(1, SIDE_BTN_X - 6, 0.5, 0)
 	inventoryPanel.BackgroundTransparency = 0.1
 	inventoryPanel.Visible = false
 	addCorner(inventoryPanel, 14)
@@ -536,8 +616,8 @@ end
 
 local function buildSideButtons(parent: Instance)
 	returnBtn = makeTextButton(parent, "ReturnBtn", "🏠")
-	returnBtn.Size = UDim2.fromOffset(64, 64)
-	returnBtn.Position = UDim2.new(1, -84, 0, 94)
+	returnBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
+	returnBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(2))
 	returnBtn.TextSize = 32
 	returnBtn.BackgroundColor3 = COLOR_BG_DARK
 	returnBtn.BackgroundTransparency = 0.1
@@ -558,8 +638,8 @@ local function buildSideButtons(parent: Instance)
 	end)
 
 	cameraBtn = makeTextButton(parent, "CameraBtn", "📷")
-	cameraBtn.Size = UDim2.fromOffset(64, 64)
-	cameraBtn.Position = UDim2.new(1, -84, 0, 168)
+	cameraBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
+	cameraBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(3))
 	cameraBtn.TextSize = 32
 	cameraBtn.BackgroundColor3 = COLOR_BG_DARK
 	cameraBtn.BackgroundTransparency = 0.1
@@ -580,8 +660,8 @@ local function buildSideButtons(parent: Instance)
 	end)
 
 	shopBtn = makeTextButton(parent, "ShopBtn", "🔫")
-	shopBtn.Size = UDim2.fromOffset(64, 64)
-	shopBtn.Position = UDim2.new(1, -84, 0, 242)
+	shopBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
+	shopBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(4))
 	shopBtn.TextSize = 32
 	shopBtn.BackgroundColor3 = COLOR_BG_DARK
 	shopBtn.BackgroundTransparency = 0.1
@@ -598,14 +678,19 @@ local function buildSideButtons(parent: Instance)
 	shopBtn.Activated:Connect(function()
 		if shopPanel then
 			shopPanel.Visible = not shopPanel.Visible
+			-- Reset the selection each time the shop reopens so stats
+			-- only show after the player explicitly picks a gun.
+			if shopPanel.Visible and selectShopGun then
+				selectShopGun(nil)
+			end
 		end
 	end)
 
 	-- Quick equip / unequip toggle for the currently selected gun.
 	-- Only clickable when the player owns at least one gun.
 	gunToggleBtn = makeTextButton(parent, "GunToggleBtn", "")
-	gunToggleBtn.Size = UDim2.fromOffset(64, 64)
-	gunToggleBtn.Position = UDim2.new(1, -84, 0, 316)
+	gunToggleBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
+	gunToggleBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(5))
 	gunToggleBtn.BackgroundColor3 = COLOR_BG_DARK
 	gunToggleBtn.BackgroundTransparency = 0.1
 	addCorner(gunToggleBtn, 12)
@@ -650,6 +735,58 @@ local function buildSideButtons(parent: Instance)
 			end
 		end
 	end)
+
+	-- --- Pickup mode button (6th in the column) ---
+	-- Mobile-friendly way to remove placed towers into inventory. Tap
+	-- the button to arm pickup mode, then tap any placed tower. The
+	-- mode auto-disables after a pickup, or when the button is tapped
+	-- again, so players don't accidentally delete towers.
+	pickupBtn = makeTextButton(parent, "PickupBtn", "")
+	pickupBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
+	pickupBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(6))
+	pickupBtn.BackgroundColor3 = COLOR_BG_DARK
+	pickupBtn.BackgroundTransparency = 0.1
+	addCorner(pickupBtn, 12)
+	pickupBtnStroke = addStroke(pickupBtn, COLOR_ACCENT, 2)
+
+	pickupBtnIcon = makeTextLabel(pickupBtn, "Icon", "✋", 30)
+	pickupBtnIcon.Size = UDim2.new(1, 0, 0, 44)
+	pickupBtnIcon.Position = UDim2.fromOffset(0, 6)
+	pickupBtnIcon.TextXAlignment = Enum.TextXAlignment.Center
+
+	pickupBtnTip = makeTextLabel(pickupBtn, "Tip", "PICKUP", 10)
+	pickupBtnTip.Font = Enum.Font.GothamBold
+	pickupBtnTip.TextColor3 = COLOR_ACCENT_BRIGHT
+	pickupBtnTip.Size = UDim2.new(1, 0, 0, 12)
+	pickupBtnTip.Position = UDim2.fromOffset(0, 50)
+	pickupBtnTip.TextXAlignment = Enum.TextXAlignment.Center
+
+	pickupBtn.Activated:Connect(function()
+		Hud.setPickupMode(not pickupModeEnabled)
+	end)
+
+	-- --- Robux shop button (7th in the column) ---
+	-- Diamond icon, purple stroke so it stands out from the other
+	-- gold-economy buttons. Tapping toggles the Robux shop panel with
+	-- premium towers/guns and cash packs. Unlike the other side
+	-- buttons, this one stays visible in both lobby and arena — the
+	-- lobby repositions it to the vertical center (see
+	-- Hud.setArenaHudVisible) since the rest of the side column is
+	-- hidden there.
+	robuxShopBtn = makeTextButton(parent, "RobuxShopBtn", "💎")
+	robuxShopBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
+	robuxShopBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(7))
+	robuxShopBtn.BackgroundColor3 = COLOR_BG_DARK
+	robuxShopBtn.BackgroundTransparency = 0.1
+	robuxShopBtn.TextSize = 30
+	addCorner(robuxShopBtn, 12)
+	addStroke(robuxShopBtn, Color3.fromRGB(180, 110, 255), 2)
+
+	robuxShopBtn.Activated:Connect(function()
+		if robuxShopPanel then
+			robuxShopPanel.Visible = not robuxShopPanel.Visible
+		end
+	end)
 end
 
 -- --- Section: crosshair ---
@@ -665,6 +802,13 @@ local function buildCrosshair(parent: Instance)
 	crosshair.BackgroundTransparency = 1
 	crosshair.Visible = false
 	crosshair.ZIndex = 50
+	-- Critical: crosshair must NEVER absorb input. Active=false and
+	-- Selectable=false together guarantee clicks pass straight through
+	-- to whatever GUI element or 3D part is beneath the cursor. Without
+	-- this, clicking a HUD button while the crosshair was hovering it
+	-- could be eaten by the crosshair frame and never reach the button.
+	crosshair.Active = false
+	crosshair.Selectable = false
 	crosshair.Parent = parent
 
 	local function makeArm(name: string, size: UDim2, pos: UDim2)
@@ -676,6 +820,8 @@ local function buildCrosshair(parent: Instance)
 		arm.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 		arm.BorderSizePixel = 0
 		arm.BackgroundTransparency = 0.15
+		arm.Active = false
+		arm.Selectable = false
 		arm.Parent = crosshair
 
 		local stroke = Instance.new("UIStroke")
@@ -696,6 +842,8 @@ local function buildCrosshair(parent: Instance)
 	dot.Position = UDim2.fromScale(0.5, 0.5)
 	dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	dot.BorderSizePixel = 0
+	dot.Active = false
+	dot.Selectable = false
 	dot.Parent = crosshair
 
 	-- Every frame: if the crosshair is currently allowed (gun equipped,
@@ -724,58 +872,315 @@ local function buildCrosshair(parent: Instance)
 	end)
 end
 
--- Install MouseEnter / MouseLeave handlers on every GuiButton in the
--- HUD so we can reliably detect when the player is hovering a clickable
--- element. Called once on mount (walks the whole tree) and then keeps
--- listening for newly added buttons so dynamically built widgets like
--- inventory slots and tower cards also get tracked.
+-- Install MouseEnter / MouseLeave handlers on every GuiButton under
+-- PlayerGui so we can reliably detect when the player is hovering a
+-- clickable element. Called once on mount (walks the whole tree) and
+-- then keeps listening for newly added buttons so dynamically built
+-- widgets like inventory slots, tower cards, AND buttons in separate
+-- ScreenGuis like the tutorial overlay all get tracked automatically.
+--
+-- We also dedup with a per-button `hovered` flag: without it, a single
+-- rapid re-enter (or an overlapping button stack) could bump the
+-- counter twice but only decrement once, stranding the crosshair
+-- hidden / the gun holstered.
+local trackedButtons: { [GuiButton]: boolean } = {}
+
 local function trackHover(inst: Instance)
-	if not inst:IsA("GuiButton") then
+	if not inst:IsA("GuiButton") or trackedButtons[inst] then
 		return
 	end
+	trackedButtons[inst] = true
+	local hovered = false
 	inst.MouseEnter:Connect(function()
+		if hovered then
+			return
+		end
+		hovered = true
 		hudHoverCount += 1
+		if hudHoverCount == 1 and onHoverTransition then
+			onHoverTransition(true)
+		end
 	end)
 	inst.MouseLeave:Connect(function()
+		if not hovered then
+			return
+		end
+		hovered = false
 		hudHoverCount = math.max(0, hudHoverCount - 1)
+		if hudHoverCount == 0 and onHoverTransition then
+			onHoverTransition(false)
+		end
+	end)
+	-- If the button is destroyed while still hovered, release the
+	-- counter so the state doesn't get stuck above zero and leave the
+	-- gun permanently holstered.
+	inst.AncestryChanged:Connect(function(_, parent)
+		if parent == nil and hovered then
+			hovered = false
+			hudHoverCount = math.max(0, hudHoverCount - 1)
+			if hudHoverCount == 0 and onHoverTransition then
+				onHoverTransition(false)
+			end
+		end
 	end)
 end
 
 -- --- Section: gun shop panel ---
 
+-- --- Section: Robux shop ---
+-- Dedicated panel for premium (Robux) purchases. Top row: the 1 premium
+-- tower (Celestial Bastion) + 2 premium guns (Starfire, Void Reaper).
+-- Bottom row: 4 cash-pack Developer Products that grant in-game gold.
+-- Independent from the gun shop so cash packs and premium items aren't
+-- buried inside the normal gold progression.
+local function buildRobuxShopPanel(parent: Instance)
+	robuxShopPanel = makeFrame(parent, "RobuxShopPanel")
+	robuxShopPanel.Size = UDim2.fromOffset(760, 520)
+	robuxShopPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+	robuxShopPanel.Position = UDim2.fromScale(0.5, 0.5)
+	robuxShopPanel.BackgroundTransparency = 0.1
+	robuxShopPanel.Visible = false
+	addCorner(robuxShopPanel, 14)
+	addStroke(robuxShopPanel, Color3.fromRGB(180, 110, 255), 2)
+	addGradient(robuxShopPanel, Color3.fromRGB(30, 18, 40), Color3.fromRGB(14, 8, 20))
+
+	local title = makeTextLabel(robuxShopPanel, "Title", "💎  ROBUX SHOP", 22)
+	title.TextColor3 = Color3.fromRGB(230, 180, 255)
+	title.Size = UDim2.new(1, 0, 0, 36)
+	title.Position = UDim2.fromOffset(0, 14)
+	title.TextXAlignment = Enum.TextXAlignment.Center
+
+	local closeBtn = makeTextButton(robuxShopPanel, "Close", "✕")
+	closeBtn.Size = UDim2.fromOffset(34, 34)
+	closeBtn.Position = UDim2.new(1, -46, 0, 12)
+	closeBtn.BackgroundColor3 = Color3.fromRGB(60, 30, 80)
+	closeBtn.TextColor3 = Color3.fromRGB(230, 180, 255)
+	addCorner(closeBtn, 8)
+	addStroke(closeBtn, Color3.fromRGB(180, 110, 255), 2)
+	closeBtn.Activated:Connect(function()
+		robuxShopPanel.Visible = false
+	end)
+
+	-- --- Top row: premium tower + 2 premium guns ---
+	local premiumHeader = makeTextLabel(robuxShopPanel, "PremiumHeader", "PREMIUM UNLOCKS", 14)
+	premiumHeader.TextColor3 = Color3.fromRGB(220, 170, 255)
+	premiumHeader.Size = UDim2.new(1, -40, 0, 20)
+	premiumHeader.Position = UDim2.fromOffset(20, 58)
+	premiumHeader.TextXAlignment = Enum.TextXAlignment.Left
+
+	local function makePremiumCard(
+		cardParent: Instance,
+		x: number,
+		name: string,
+		icon: string,
+		description: string,
+		price: number,
+		onBuy: () -> ()
+	)
+		local card = makeFrame(cardParent, name .. "Card")
+		card.Size = UDim2.fromOffset(230, 200)
+		card.Position = UDim2.fromOffset(x, 86)
+		card.BackgroundColor3 = Color3.fromRGB(40, 22, 60)
+		addCorner(card, 10)
+		addStroke(card, Color3.fromRGB(180, 110, 255), 2)
+
+		local iconLabel = makeTextLabel(card, "Icon", icon, 54)
+		iconLabel.Size = UDim2.new(1, 0, 0, 70)
+		iconLabel.Position = UDim2.fromOffset(0, 10)
+		iconLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+		local nameLabel = makeTextLabel(card, "Name", name, 16)
+		nameLabel.TextColor3 = Color3.fromRGB(230, 200, 255)
+		nameLabel.Size = UDim2.new(1, -16, 0, 20)
+		nameLabel.Position = UDim2.fromOffset(8, 80)
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+		local desc = makeTextLabel(card, "Desc", description, 12)
+		desc.Font = Enum.Font.GothamMedium
+		desc.TextColor3 = COLOR_TEXT_DIM
+		desc.Size = UDim2.new(1, -16, 0, 52)
+		desc.Position = UDim2.fromOffset(8, 102)
+		desc.TextWrapped = true
+		desc.TextXAlignment = Enum.TextXAlignment.Center
+
+		local buyBtn = makeTextButton(card, "Buy", string.format("%d R$", price))
+		buyBtn.Size = UDim2.fromOffset(180, 34)
+		buyBtn.AnchorPoint = Vector2.new(0.5, 0)
+		buyBtn.Position = UDim2.new(0.5, 0, 0, 158)
+		buyBtn.BackgroundColor3 = Color3.fromRGB(90, 50, 140)
+		buyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		buyBtn.TextSize = 15
+		addCorner(buyBtn, 8)
+		addStroke(buyBtn, Color3.fromRGB(180, 110, 255), 2)
+		buyBtn.Activated:Connect(onBuy)
+	end
+
+	makePremiumCard(
+		robuxShopPanel,
+		30,
+		GamePassConfig.PREMIUM_TOWER.name,
+		"🏰",
+		GamePassConfig.PREMIUM_TOWER.description,
+		GamePassConfig.PREMIUM_TOWER.price,
+		function()
+			-- Route through the existing BuyGun / PlaceTower prompt path.
+			-- The premium tower purchase is normally triggered by clicking
+			-- the celestial card in the tower picker, but we can also
+			-- initiate the GamePass prompt directly on the client so the
+			-- user doesn't need to hunt for it in the picker.
+			local passId = GamePassConfig.PREMIUM_TOWER.id
+			if passId > 0 then
+				pcall(function()
+					MarketplaceService:PromptGamePassPurchase(player, passId)
+				end)
+			end
+		end
+	)
+	makePremiumCard(
+		robuxShopPanel,
+		265,
+		GamePassConfig.PREMIUM_GUN.name,
+		"🌟",
+		GamePassConfig.PREMIUM_GUN.description,
+		GamePassConfig.PREMIUM_GUN.price,
+		function()
+			if onBuyGunCallback then
+				onBuyGunCallback(GamePassConfig.PREMIUM_GUN_KEY)
+			end
+		end
+	)
+	makePremiumCard(
+		robuxShopPanel,
+		500,
+		GamePassConfig.PREMIUM_GUN_2.name,
+		"💀",
+		GamePassConfig.PREMIUM_GUN_2.description,
+		GamePassConfig.PREMIUM_GUN_2.price,
+		function()
+			if onBuyGunCallback then
+				onBuyGunCallback(GamePassConfig.PREMIUM_GUN_2_KEY)
+			end
+		end
+	)
+
+	-- --- Bottom row: 4 cash packs ---
+	local cashHeader = makeTextLabel(robuxShopPanel, "CashHeader", "CASH PACKS", 14)
+	cashHeader.TextColor3 = Color3.fromRGB(255, 220, 120)
+	cashHeader.Size = UDim2.new(1, -40, 0, 20)
+	cashHeader.Position = UDim2.fromOffset(20, 310)
+	cashHeader.TextXAlignment = Enum.TextXAlignment.Left
+
+	local function formatNumber(n: number): string
+		-- "25000" → "25,000". Simple thousands-separator.
+		local s = tostring(n)
+		local out = ""
+		for i = 1, #s do
+			out = out .. s:sub(i, i)
+			local fromRight = #s - i
+			if fromRight > 0 and fromRight % 3 == 0 then
+				out = out .. ","
+			end
+		end
+		return out
+	end
+
+	for i, pack in GamePassConfig.CASH_PACKS do
+		local card = makeFrame(robuxShopPanel, "CashPack_" .. i)
+		card.Size = UDim2.fromOffset(165, 150)
+		card.Position = UDim2.fromOffset(25 + (i - 1) * 180, 338)
+		card.BackgroundColor3 = Color3.fromRGB(50, 38, 16)
+		addCorner(card, 10)
+		addStroke(card, Color3.fromRGB(255, 200, 80), 2)
+
+		local icon = makeTextLabel(card, "Icon", "💰", 38)
+		icon.Size = UDim2.new(1, 0, 0, 48)
+		icon.Position = UDim2.fromOffset(0, 10)
+		icon.TextXAlignment = Enum.TextXAlignment.Center
+
+		local amount = makeTextLabel(card, "Amount", formatNumber(pack.cashAmount), 18)
+		amount.TextColor3 = Color3.fromRGB(255, 230, 140)
+		amount.Size = UDim2.new(1, -16, 0, 22)
+		amount.Position = UDim2.fromOffset(8, 60)
+		amount.TextXAlignment = Enum.TextXAlignment.Center
+
+		local label = makeTextLabel(card, "Label", pack.label, 12)
+		label.Font = Enum.Font.GothamMedium
+		label.TextColor3 = COLOR_TEXT_DIM
+		label.Size = UDim2.new(1, -16, 0, 16)
+		label.Position = UDim2.fromOffset(8, 84)
+		label.TextXAlignment = Enum.TextXAlignment.Center
+
+		local buyBtn = makeTextButton(card, "Buy", string.format("%d R$", pack.robuxPrice))
+		buyBtn.Size = UDim2.fromOffset(135, 30)
+		buyBtn.AnchorPoint = Vector2.new(0.5, 0)
+		buyBtn.Position = UDim2.new(0.5, 0, 0, 108)
+		buyBtn.BackgroundColor3 = Color3.fromRGB(140, 90, 30)
+		buyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		buyBtn.TextSize = 14
+		addCorner(buyBtn, 8)
+		addStroke(buyBtn, Color3.fromRGB(255, 200, 80), 2)
+		local productId = pack.productId
+		buyBtn.Activated:Connect(function()
+			if onBuyCashPackCallback then
+				onBuyCashPackCallback(productId)
+			end
+		end)
+	end
+
+	-- Footer note so the developer sees why purchases might not fire
+	-- in a fresh place until real product IDs are configured.
+	local footer = makeTextLabel(
+		robuxShopPanel,
+		"Footer",
+		"Configure real Game Pass / Developer Product IDs in GamePassConfig.luau.",
+		11
+	)
+	footer.Font = Enum.Font.GothamMedium
+	footer.TextColor3 = Color3.fromRGB(140, 110, 170)
+	footer.Size = UDim2.new(1, -40, 0, 16)
+	footer.Position = UDim2.new(0, 20, 1, -28)
+	footer.TextXAlignment = Enum.TextXAlignment.Center
+end
+
 local function buildShopPanel(parent: Instance)
 	shopPanel = makeFrame(parent, "ShopPanel")
-	shopPanel.Size = UDim2.fromOffset(380, 520)
-	shopPanel.AnchorPoint = Vector2.new(1, 0.5)
-	shopPanel.Position = UDim2.new(1, -104, 0.5, 0)
+	shopPanel.Size = UDim2.fromOffset(760, 460)
+	shopPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+	shopPanel.Position = UDim2.fromScale(0.5, 0.5)
 	shopPanel.BackgroundTransparency = 0.1
 	shopPanel.Visible = false
 	addCorner(shopPanel, 14)
 	addStroke(shopPanel, COLOR_ACCENT, 2)
 	addGradient(shopPanel, Color3.fromRGB(30, 20, 12), Color3.fromRGB(18, 12, 6))
 
-	local title = makeTextLabel(shopPanel, "Title", "ARMORY", 20)
+	local title = makeTextLabel(shopPanel, "Title", "ARMORY", 22)
 	title.TextColor3 = COLOR_ACCENT_BRIGHT
-	title.Size = UDim2.new(1, 0, 0, 34)
-	title.Position = UDim2.fromOffset(0, 12)
+	title.Size = UDim2.new(1, 0, 0, 36)
+	title.Position = UDim2.fromOffset(0, 10)
 	title.TextXAlignment = Enum.TextXAlignment.Center
 
-	local subtitle = makeTextLabel(
-		shopPanel,
-		"Subtitle",
-		"Personal weapons — aim with mouse, click to shoot",
-		11
-	)
-	subtitle.TextColor3 = COLOR_TEXT_DIM
-	subtitle.Font = Enum.Font.GothamMedium
-	subtitle.Size = UDim2.new(1, -20, 0, 16)
-	subtitle.Position = UDim2.fromOffset(10, 42)
-	subtitle.TextXAlignment = Enum.TextXAlignment.Center
+	-- Close X button in the top-right corner of the panel
+	local closeBtn = makeTextButton(shopPanel, "Close", "×")
+	closeBtn.Size = UDim2.fromOffset(36, 36)
+	closeBtn.Position = UDim2.new(1, -46, 0, 10)
+	closeBtn.TextSize = 28
+	closeBtn.BackgroundColor3 = Color3.fromRGB(90, 30, 30)
+	addCorner(closeBtn, 8)
+	addStroke(closeBtn, COLOR_DANGER, 1)
+	closeBtn.Activated:Connect(function()
+		shopPanel.Visible = false
+	end)
+
+	-- --- Left pane: scrollable list of gun rows ---
+	local leftPane = makeFrame(shopPanel, "LeftPane")
+	leftPane.Size = UDim2.new(0, 300, 1, -60)
+	leftPane.Position = UDim2.fromOffset(12, 50)
+	leftPane.BackgroundTransparency = 1
 
 	local list = Instance.new("ScrollingFrame")
 	list.Name = "List"
-	list.Size = UDim2.new(1, -24, 1, -74)
-	list.Position = UDim2.fromOffset(12, 64)
+	list.Size = UDim2.fromScale(1, 1)
+	list.Position = UDim2.fromOffset(0, 0)
 	list.BackgroundTransparency = 1
 	list.BorderSizePixel = 0
 	list.ScrollBarThickness = 6
@@ -783,11 +1188,11 @@ local function buildShopPanel(parent: Instance)
 	list.ScrollingDirection = Enum.ScrollingDirection.Y
 	list.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	list.CanvasSize = UDim2.fromScale(0, 0)
-	list.Parent = shopPanel
+	list.Parent = leftPane
 
 	local layout = Instance.new("UIListLayout")
 	layout.FillDirection = Enum.FillDirection.Vertical
-	layout.Padding = UDim.new(0, 8)
+	layout.Padding = UDim.new(0, 6)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = list
 
@@ -802,64 +1207,41 @@ local function buildShopPanel(parent: Instance)
 		end
 
 		local card = makeFrame(list, "Card_" .. gunKey)
-		card.Size = UDim2.new(1, 0, 0, 92)
+		card.Size = UDim2.new(1, 0, 0, 66)
 		card.BackgroundColor3 = COLOR_BG_CARD
 		card.BackgroundTransparency = 0.2
 		card.LayoutOrder = order
 		addCorner(card, 10)
 		addStroke(card, COLOR_ACCENT, 1)
 
-		local icon = makeTextLabel(card, "Icon", def.icon, 34)
-		icon.Size = UDim2.fromOffset(64, 64)
-		icon.Position = UDim2.fromOffset(8, 14)
+		local icon = makeTextLabel(card, "Icon", def.icon, 30)
+		icon.Size = UDim2.fromOffset(52, 66)
+		icon.Position = UDim2.fromOffset(6, 0)
 		icon.TextXAlignment = Enum.TextXAlignment.Center
 
-		local nameLbl = makeTextLabel(card, "Name", def.name, 16)
+		local nameLbl = makeTextLabel(card, "Name", def.name, 15)
 		nameLbl.TextColor3 = COLOR_ACCENT_BRIGHT
-		nameLbl.Size = UDim2.new(1, -200, 0, 22)
-		nameLbl.Position = UDim2.fromOffset(80, 10)
+		nameLbl.Size = UDim2.new(1, -170, 0, 22)
+		nameLbl.Position = UDim2.fromOffset(62, 10)
 		nameLbl.TextXAlignment = Enum.TextXAlignment.Left
 
-		local statsText = string.format(
-			"DMG %d · ROF %.1f · Range %d",
-			def.damage * def.pellets,
-			def.fireRate,
-			def.range
-		)
-		local stats = makeTextLabel(card, "Stats", statsText, 11)
-		stats.Font = Enum.Font.GothamMedium
-		stats.TextColor3 = COLOR_TEXT_DIM
-		stats.Size = UDim2.new(1, -200, 0, 14)
-		stats.Position = UDim2.fromOffset(80, 32)
-		stats.TextXAlignment = Enum.TextXAlignment.Left
-
-		local desc = makeTextLabel(card, "Desc", def.description, 11)
-		desc.Font = Enum.Font.Gotham
-		desc.TextColor3 = COLOR_TEXT_DIM
-		desc.Size = UDim2.new(1, -200, 0, 28)
-		desc.Position = UDim2.fromOffset(80, 48)
-		desc.TextXAlignment = Enum.TextXAlignment.Left
-		desc.TextYAlignment = Enum.TextYAlignment.Top
-		desc.TextWrapped = true
+		local statusLabel = makeTextLabel(card, "Status", string.format("%dg", def.cost), 11)
+		statusLabel.TextColor3 = COLOR_GOLD_TEXT
+		statusLabel.Size = UDim2.new(1, -170, 0, 14)
+		statusLabel.Position = UDim2.fromOffset(62, 34)
+		statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 		local actionBtn = makeTextButton(card, "Action", "BUY")
-		actionBtn.Size = UDim2.fromOffset(96, 36)
-		actionBtn.Position = UDim2.new(1, -108, 0.5, -18)
+		actionBtn.Size = UDim2.fromOffset(94, 34)
+		actionBtn.Position = UDim2.new(1, -102, 0.5, -17)
 		actionBtn.BackgroundColor3 = Color3.fromRGB(76, 175, 80)
 		actionBtn.TextSize = 14
 		addCorner(actionBtn, 8)
 		addStroke(actionBtn, Color3.fromRGB(165, 214, 167), 2)
 
-		local statusLabel = makeTextLabel(card, "Status", string.format("%dg", def.cost), 12)
-		statusLabel.TextColor3 = COLOR_GOLD_TEXT
-		statusLabel.Size = UDim2.fromOffset(96, 14)
-		statusLabel.Position = UDim2.new(1, -108, 0.5, 20)
-		statusLabel.TextXAlignment = Enum.TextXAlignment.Center
-
 		actionBtn.Activated:Connect(function()
 			if currentState.ownedGuns and currentState.ownedGuns[gunKey] then
 				if currentState.equippedGun == gunKey then
-					-- Already equipped → clicking it again unequips
 					if onEquipGunCallback then
 						onEquipGunCallback(nil)
 					end
@@ -875,9 +1257,208 @@ local function buildShopPanel(parent: Instance)
 			end
 		end)
 
+		-- Clicking the row background (anywhere except the action button)
+		-- selects the gun so the right pane shows its preview + stats.
+		local selectArea = Instance.new("TextButton")
+		selectArea.Name = "SelectArea"
+		selectArea.Text = ""
+		selectArea.BackgroundTransparency = 1
+		selectArea.Size = UDim2.new(1, -110, 1, 0)
+		selectArea.Position = UDim2.fromOffset(0, 0)
+		selectArea.ZIndex = 2
+		selectArea.Parent = card
+		selectArea.Activated:Connect(function()
+			selectShopGun(gunKey)
+		end)
+
 		shopCards[gunKey] = { card = card, actionBtn = actionBtn, statusLabel = statusLabel }
 	end
+
+	-- --- Right pane: preview + stats (only populated on selection) ---
+	local rightPane = makeFrame(shopPanel, "RightPane")
+	rightPane.Size = UDim2.new(0, 420, 1, -60)
+	rightPane.Position = UDim2.fromOffset(324, 50)
+	rightPane.BackgroundColor3 = Color3.fromRGB(18, 12, 6)
+	rightPane.BackgroundTransparency = 0.25
+	addCorner(rightPane, 12)
+	addStroke(rightPane, COLOR_ACCENT, 1)
+
+	-- Empty-state hint (shown until the player clicks a gun on the left)
+	local emptyHint = makeTextLabel(rightPane, "EmptyHint", "◀  SELECT A WEAPON TO PREVIEW", 16)
+	emptyHint.Font = Enum.Font.GothamBold
+	emptyHint.TextColor3 = COLOR_TEXT_DIM
+	emptyHint.Size = UDim2.fromScale(1, 1)
+	emptyHint.Position = UDim2.fromScale(0, 0)
+	emptyHint.TextXAlignment = Enum.TextXAlignment.Center
+	emptyHint.TextYAlignment = Enum.TextYAlignment.Center
+	shopDetailEmpty = emptyHint
+
+	-- Detail content frame — hidden until a gun is selected
+	local content = makeFrame(rightPane, "Content")
+	content.Size = UDim2.fromScale(1, 1)
+	content.Position = UDim2.fromScale(0, 0)
+	content.BackgroundTransparency = 1
+	content.Visible = false
+	shopDetailContent = content
+
+	-- ViewportFrame with a 3D preview of the selected gun model
+	local viewport = Instance.new("ViewportFrame")
+	viewport.Name = "GunPreview"
+	viewport.Size = UDim2.new(1, -24, 0, 200)
+	viewport.Position = UDim2.fromOffset(12, 12)
+	viewport.BackgroundColor3 = Color3.fromRGB(8, 5, 2)
+	viewport.BackgroundTransparency = 0.25
+	viewport.BorderSizePixel = 0
+	viewport.LightColor = Color3.fromRGB(255, 240, 220)
+	viewport.LightDirection = Vector3.new(-0.4, -0.8, -0.3)
+	viewport.Ambient = Color3.fromRGB(140, 130, 120)
+	viewport.Parent = content
+	local vpCorner = Instance.new("UICorner")
+	vpCorner.CornerRadius = UDim.new(0, 10)
+	vpCorner.Parent = viewport
+
+	local worldModel = Instance.new("WorldModel")
+	worldModel.Parent = viewport
+	shopViewportWorld = worldModel
+
+	local vpCamera = Instance.new("Camera")
+	vpCamera.FieldOfView = 45
+	vpCamera.CFrame = CFrame.lookAt(Vector3.new(3.8, 1.8, 3.8), Vector3.new(0, 0.5, -0.3))
+	vpCamera.Parent = viewport
+	viewport.CurrentCamera = vpCamera
+
+	local nameLbl = makeTextLabel(content, "Name", "", 22)
+	nameLbl.TextColor3 = COLOR_ACCENT_BRIGHT
+	nameLbl.Font = Enum.Font.GothamBlack
+	nameLbl.Size = UDim2.new(1, -24, 0, 30)
+	nameLbl.Position = UDim2.fromOffset(12, 220)
+	nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+	shopDetailName = nameLbl
+
+	local costLbl = makeTextLabel(content, "Cost", "", 14)
+	costLbl.TextColor3 = COLOR_GOLD_TEXT
+	costLbl.Font = Enum.Font.GothamBold
+	costLbl.Size = UDim2.new(1, -24, 0, 18)
+	costLbl.Position = UDim2.fromOffset(12, 250)
+	costLbl.TextXAlignment = Enum.TextXAlignment.Left
+	shopDetailCost = costLbl
+
+	local statsLbl = makeTextLabel(content, "Stats", "", 13)
+	statsLbl.TextColor3 = COLOR_TEXT
+	statsLbl.Font = Enum.Font.GothamMedium
+	statsLbl.Size = UDim2.new(1, -24, 0, 60)
+	statsLbl.Position = UDim2.fromOffset(12, 274)
+	statsLbl.TextXAlignment = Enum.TextXAlignment.Left
+	statsLbl.TextYAlignment = Enum.TextYAlignment.Top
+	statsLbl.RichText = true
+	shopDetailStats = statsLbl
+
+	local descLbl = makeTextLabel(content, "Desc", "", 12)
+	descLbl.TextColor3 = COLOR_TEXT_DIM
+	descLbl.Font = Enum.Font.Gotham
+	descLbl.Size = UDim2.new(1, -24, 0, 60)
+	descLbl.Position = UDim2.fromOffset(12, 338)
+	descLbl.TextXAlignment = Enum.TextXAlignment.Left
+	descLbl.TextYAlignment = Enum.TextYAlignment.Top
+	descLbl.TextWrapped = true
+	shopDetailDesc = descLbl
 end
+
+-- Populates the right pane with the given gun and highlights the
+-- matching row on the left. Pass nil to clear.
+selectShopGun = function(gunKey: string?)
+	-- Highlight the active row, dim the others
+	for key, refs in shopCards do
+		local stroke = refs.card:FindFirstChildOfClass("UIStroke")
+		if stroke then
+			if key == gunKey then
+				stroke.Color = COLOR_ACCENT_BRIGHT
+				stroke.Thickness = 3
+			else
+				stroke.Color = COLOR_ACCENT
+				stroke.Thickness = 1
+			end
+		end
+	end
+
+	if not gunKey or not shopDetailContent or not shopDetailEmpty then
+		if shopDetailContent then
+			shopDetailContent.Visible = false
+		end
+		if shopDetailEmpty then
+			shopDetailEmpty.Visible = true
+		end
+		if shopCurrentPreviewModel then
+			shopCurrentPreviewModel:Destroy()
+			shopCurrentPreviewModel = nil
+		end
+		return
+	end
+
+	local def = Guns.defs[gunKey]
+	if not def then
+		return
+	end
+
+	shopDetailEmpty.Visible = false
+	shopDetailContent.Visible = true
+
+	-- Clear the old preview and build a fresh one
+	if shopCurrentPreviewModel then
+		shopCurrentPreviewModel:Destroy()
+		shopCurrentPreviewModel = nil
+	end
+	local model = PlayerGun.buildDisplayModel(gunKey)
+	if model and shopViewportWorld then
+		model.Parent = shopViewportWorld
+		shopCurrentPreviewModel = model
+	end
+
+	if shopDetailName then
+		shopDetailName.Text = def.name
+	end
+	if shopDetailCost then
+		if gunKey == GamePassConfig.PREMIUM_GUN_KEY then
+			shopDetailCost.Text = GamePassConfig.PREMIUM_GUN.price .. " R$  (premium)"
+			shopDetailCost.TextColor3 = Color3.fromRGB(120, 200, 255)
+		elseif gunKey == GamePassConfig.PREMIUM_GUN_2_KEY then
+			shopDetailCost.Text = GamePassConfig.PREMIUM_GUN_2.price .. " R$  (premium)"
+			shopDetailCost.TextColor3 = Color3.fromRGB(220, 130, 255)
+		elseif def.cost == 0 then
+			shopDetailCost.Text = "FREE  (starter)"
+			shopDetailCost.TextColor3 = COLOR_TEXT_DIM
+		else
+			shopDetailCost.Text = string.format("%d gold", def.cost)
+			shopDetailCost.TextColor3 = COLOR_GOLD_TEXT
+		end
+	end
+	if shopDetailStats then
+		shopDetailStats.Text = string.format(
+			"<b>DAMAGE</b> %d   ·   <b>ROF</b> %.1f/s   ·   <b>RANGE</b> %d\n<b>PELLETS</b> %d   ·   <b>SPREAD</b> %.1f°",
+			def.damage * def.pellets,
+			def.fireRate,
+			def.range,
+			def.pellets,
+			def.spread
+		)
+	end
+	if shopDetailDesc then
+		shopDetailDesc.Text = def.description
+	end
+end
+
+-- Spin the currently previewed gun model so the player sees it from all
+-- angles. Guarded by shop visibility so it's a cheap no-op while closed.
+RunService.RenderStepped:Connect(function()
+	if not shopPanel or not shopPanel.Visible then
+		return
+	end
+	if not shopCurrentPreviewModel or not shopCurrentPreviewModel.PrimaryPart then
+		return
+	end
+	local angle = tick() * 0.8
+	shopCurrentPreviewModel:PivotTo(CFrame.new(0, 0.5, 0) * CFrame.Angles(0, angle, 0))
+end)
 
 -- --- Section: controls hint ---
 
@@ -1197,7 +1778,7 @@ local function updateInventory()
 	end
 
 	if #currentState.inventory == 0 then
-		local empty = makeTextLabel(inventoryList, "Empty", "Right-click a tower to pick it up", 13)
+		local empty = makeTextLabel(inventoryList, "Empty", "Tap the PICKUP button to store a placed tower", 13)
 		empty.Font = Enum.Font.GothamMedium
 		empty.Size = UDim2.new(1, 0, 0, 40)
 		empty.TextColor3 = COLOR_TEXT_DIM
@@ -1246,28 +1827,42 @@ local function updateInventory()
 		info.TextColor3 = COLOR_TEXT_DIM
 		info.TextXAlignment = Enum.TextXAlignment.Left
 
-		local sellBtn = makeTextButton(slot, "Sell", "Sell +" .. refund .. "g")
-		sellBtn.Size = UDim2.fromOffset(84, 40)
-		sellBtn.Position = UDim2.new(1, -94, 0.5, -20)
-		sellBtn.TextSize = 12
-		sellBtn.BackgroundColor3 = Color3.fromRGB(109, 58, 16)
-		addCorner(sellBtn, 6)
-		addStroke(sellBtn, COLOR_ACCENT_BRIGHT, 1)
+		local isPremium = item.towerType == GamePassConfig.PREMIUM_TOWER_KEY
+
+		if not isPremium then
+			local sellBtn = makeTextButton(slot, "Sell", "Sell +" .. refund .. "g")
+			sellBtn.Size = UDim2.fromOffset(84, 40)
+			sellBtn.Position = UDim2.new(1, -94, 0.5, -20)
+			sellBtn.TextSize = 12
+			sellBtn.BackgroundColor3 = Color3.fromRGB(109, 58, 16)
+			addCorner(sellBtn, 6)
+			addStroke(sellBtn, COLOR_ACCENT_BRIGHT, 1)
+			sellBtn.Activated:Connect(function()
+				Remotes.SellInventoryItem:FireServer(idx)
+			end)
+		else
+			-- Celestial is unsellable (Robux purchase). Replace the sell
+			-- button with a small "PREMIUM" tag so the slot still looks
+			-- balanced.
+			local tag = makeTextLabel(slot, "PremiumTag", "PREMIUM", 11)
+			tag.Size = UDim2.fromOffset(84, 40)
+			tag.Position = UDim2.new(1, -94, 0.5, -20)
+			tag.TextColor3 = COLOR_ACCENT_BRIGHT
+			tag.Font = Enum.Font.GothamBlack
+			tag.TextXAlignment = Enum.TextXAlignment.Center
+		end
 
 		local selectBtn = Instance.new("TextButton")
 		selectBtn.Name = "SelectArea"
 		selectBtn.Text = ""
 		selectBtn.BackgroundTransparency = 1
-		selectBtn.Size = UDim2.new(1, -104, 1, 0)
+		selectBtn.Size = UDim2.new(1, (if isPremium then -100 else -104), 1, 0)
 		selectBtn.Position = UDim2.fromOffset(0, 0)
 		selectBtn.ZIndex = 5
 		selectBtn.Parent = slot
 
 		selectBtn.Activated:Connect(function()
 			Hud.selectFromInventory(idx)
-		end)
-		sellBtn.Activated:Connect(function()
-			Remotes.SellInventoryItem:FireServer(idx)
 		end)
 	end
 end
@@ -1323,6 +1918,8 @@ updateShop = function()
 		if not def then
 			continue
 		end
+		local isPremium = gunKey == GamePassConfig.PREMIUM_GUN_KEY
+		local isPremium2 = gunKey == GamePassConfig.PREMIUM_GUN_2_KEY
 		if gunKey == equipped then
 			refs.actionBtn.Text = "UNEQUIP"
 			refs.actionBtn.BackgroundColor3 = Color3.fromRGB(160, 65, 55)
@@ -1335,6 +1932,22 @@ updateShop = function()
 			refs.actionBtn.AutoButtonColor = true
 			refs.statusLabel.Text = "owned"
 			refs.statusLabel.TextColor3 = COLOR_TEXT_DIM
+		elseif isPremium then
+			-- Robux-gated — show the game pass price and route the buy
+			-- button through the normal BuyGun remote; the server will
+			-- intercept and trigger PromptGamePassPurchase.
+			refs.actionBtn.Text = "BUY"
+			refs.actionBtn.BackgroundColor3 = Color3.fromRGB(80, 140, 200)
+			refs.actionBtn.AutoButtonColor = true
+			refs.statusLabel.Text = GamePassConfig.PREMIUM_GUN.price .. " R$"
+			refs.statusLabel.TextColor3 = Color3.fromRGB(120, 200, 255)
+		elseif isPremium2 then
+			-- Second premium (void reaper) — same flow, purple accent.
+			refs.actionBtn.Text = "BUY"
+			refs.actionBtn.BackgroundColor3 = Color3.fromRGB(140, 80, 200)
+			refs.actionBtn.AutoButtonColor = true
+			refs.statusLabel.Text = GamePassConfig.PREMIUM_GUN_2.price .. " R$"
+			refs.statusLabel.TextColor3 = Color3.fromRGB(220, 130, 255)
 		else
 			refs.actionBtn.Text = "BUY"
 			if currentState.gold >= def.cost then
@@ -1367,18 +1980,22 @@ function Hud.mount(onStarted: () -> ())
 	buildInventory(screen)
 	buildSideButtons(screen)
 	buildShopPanel(screen)
+	buildRobuxShopPanel(screen)
 	buildCrosshair(screen)
 	buildControlsHint(screen)
 	buildGameOverScreen(screen)
 	buildHomeScreen(screen)
 
-	-- Walk the HUD tree once to install hover tracking on every GuiButton,
-	-- then keep listening so any dynamically-added buttons (inventory
-	-- slots, etc.) also auto-register.
-	for _, d in screen:GetDescendants() do
+	-- Walk the entire PlayerGui once to install hover tracking on every
+	-- GuiButton, then keep listening so any dynamically-added buttons
+	-- (inventory slots, tower cards, tutorial overlay, future panels,
+	-- etc.) auto-register. Tracking at the PlayerGui level (not just
+	-- our own ScreenGui) is what makes the gun auto-holster work for
+	-- buttons in overlays we don't directly own.
+	for _, d in playerGui:GetDescendants() do
 		trackHover(d)
 	end
-	screen.DescendantAdded:Connect(trackHover)
+	playerGui.DescendantAdded:Connect(trackHover)
 
 	updateStats()
 	updateTowerButtons()
@@ -1388,8 +2005,28 @@ function Hud.mount(onStarted: () -> ())
 	updateShop()
 end
 
+-- Tracks the previously-equipped gun across broadcasts so we can detect
+-- the "just equipped a gun" transition and auto-clear any tower that
+-- was selected in the picker. Otherwise the player ends up holding a
+-- gun with a ghost tower still queued for placement.
+local previousEquippedGun: string? = nil
+
 function Hud.onStateUpdate(state)
 	currentState = state
+	-- Detect a fresh gun equip (was nil/empty, now set) and drop any
+	-- tower selection so the preview + ghost vanish. This lets the
+	-- player immediately start shooting without having to manually
+	-- click their selected tower again to deselect it.
+	local newEquipped = state.equippedGun
+	if newEquipped and newEquipped ~= previousEquippedGun then
+		if selection.towerType ~= "" then
+			selection.towerType = ""
+			selection.fromInventoryIndex = -1
+			lastPanelTower = "basic"
+			fireSelectionChanged()
+		end
+	end
+	previousEquippedGun = newEquipped
 	updateStats()
 	updateTowerButtons()
 	updateWaveButton()
@@ -1409,8 +2046,9 @@ end
 
 -- Notify listeners (PlayerGun, crosshair controller) whenever the
 -- selection state transitions so they can hide/show the gun model and
--- crosshair accordingly.
-local function fireSelectionChanged()
+-- crosshair accordingly. Assigned into the forward-declared binding
+-- at the top of the file so Hud.onStateUpdate can reach it.
+fireSelectionChanged = function()
 	if onSelectionChangedCallback then
 		onSelectionChangedCallback()
 	end
@@ -1538,6 +2176,13 @@ function Hud.resetForNewRealm()
 	if shopPanel then
 		shopPanel.Visible = false
 	end
+	-- Tear down any gun preview model that was sitting in the shop
+	-- viewport from the previous realm so a stale model can't linger
+	-- visibly when the shop is reopened in the new realm. selectShopGun
+	-- is called with nil so highlight state on the cards also resets.
+	if selectShopGun then
+		selectShopGun(nil)
+	end
 	updateTowerButtons()
 	updateInventory()
 	updateSelectedInfo()
@@ -1589,8 +2234,23 @@ function Hud.setEquipGunCallback(fn: (string?) -> ())
 	onEquipGunCallback = fn
 end
 
+-- Called by the Robux shop's cash pack buy buttons with the product id
+-- of the pack the player tapped. init.client forwards this to
+-- MarketplaceService:PromptProductPurchase.
+function Hud.setBuyCashPackCallback(fn: (number) -> ())
+	onBuyCashPackCallback = fn
+end
+
 function Hud.setSelectionChangedCallback(fn: () -> ())
 	onSelectionChangedCallback = fn
+end
+
+-- Called with `true` when the pointer enters the first tracked button
+-- and `false` when it leaves the last. init.client uses this to auto-
+-- holster the player's gun while they're mousing over UI, so the
+-- crosshair / tool model doesn't get in the way of clicks.
+function Hud.setHoverTransitionCallback(fn: (boolean) -> ())
+	onHoverTransition = fn
 end
 
 -- True if the player currently has a tower selected from the picker
@@ -1612,9 +2272,71 @@ function Hud.setCrosshairVisible(v: boolean)
 end
 
 -- Exposes the currently equipped gun key to the shooting code in
--- Placement.luau, so left-click fires only when a gun is equipped.
+-- Placement.luau, so clicks fire the gun only when a gun is equipped.
 function Hud.getEquippedGun(): string?
 	return currentState.equippedGun
+end
+
+-- True while the mouse (or touch) is over any GuiButton under
+-- PlayerGui (HUD, tutorial overlay, tutorial prompt, game-over, etc.
+-- — trackHover installs listeners on every one). Used both as a
+-- belt-and-suspenders gate in Placement's click handler AND as the
+-- trigger for auto-holstering the player's gun while they're aiming
+-- at a button to click it.
+function Hud.isHoveringHudButton(): boolean
+	return hudHoverCount > 0
+end
+
+-- Monotonically-increasing counter of player gunshots. Placement calls
+-- incrementShotsFired() every time it fires the local FireGun remote,
+-- and Tutorial reads getShotsFired() to auto-advance the "tap enemies
+-- to shoot" step the instant the player pulls the trigger.
+local shotsFired = 0
+
+function Hud.incrementShotsFired()
+	shotsFired += 1
+end
+
+function Hud.getShotsFired(): number
+	return shotsFired
+end
+
+-- --- Pickup mode ---
+-- Toggle the mobile-friendly tower pickup mode. When enabled, the next
+-- tap on a placed tower picks it up. Placement.luau reads isPickupMode
+-- during its click handler; if true, clicks that hit a tower are routed
+-- to PickupTower and the mode is auto-disabled via notifyTowerPickedUp
+-- so players don't delete more towers by accident.
+function Hud.setPickupMode(enabled: boolean)
+	pickupModeEnabled = enabled
+	if not pickupBtn or not pickupBtnStroke or not pickupBtnTip then
+		return
+	end
+	if enabled then
+		pickupBtn.BackgroundColor3 = Color3.fromRGB(160, 50, 40)
+		pickupBtnStroke.Color = Color3.fromRGB(255, 180, 140)
+		pickupBtnStroke.Thickness = 3
+		pickupBtnTip.Text = "TAP TOWER"
+		pickupBtnTip.TextColor3 = Color3.fromRGB(255, 220, 200)
+	else
+		pickupBtn.BackgroundColor3 = COLOR_BG_DARK
+		pickupBtnStroke.Color = COLOR_ACCENT
+		pickupBtnStroke.Thickness = 2
+		pickupBtnTip.Text = "PICKUP"
+		pickupBtnTip.TextColor3 = COLOR_ACCENT_BRIGHT
+	end
+end
+
+function Hud.isPickupMode(): boolean
+	return pickupModeEnabled
+end
+
+-- Called by Placement after a successful pickup so the button visual
+-- resets to its default state.
+function Hud.notifyTowerPickedUp()
+	if pickupModeEnabled then
+		Hud.setPickupMode(false)
+	end
 end
 
 -- Show or hide every HUD element that is only meaningful inside an
@@ -1655,10 +2377,28 @@ function Hud.setArenaHudVisible(v: boolean)
 	if gunToggleBtn then
 		gunToggleBtn.Visible = v
 	end
+	if pickupBtn then
+		pickupBtn.Visible = v
+	end
 	if shopPanel and not v then
 		shopPanel.Visible = false
 	end
+	-- Robux shop button stays visible in both lobby and arena. In the
+	-- arena it sits in slot 7 of the right-side column; in the lobby
+	-- the rest of that column is hidden, so center it vertically on
+	-- the right edge instead (offset Y by half the button size to get
+	-- true center since the button uses default AnchorPoint 0,0).
+	if robuxShopBtn then
+		if v then
+			robuxShopBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(7))
+		else
+			robuxShopBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, -SIDE_BTN_SIZE / 2)
+		end
+	end
 	if not v then
+		-- Leaving the arena → drop pickup mode so it doesn't linger
+		-- into the next realm entry.
+		Hud.setPickupMode(false)
 		Hud.setCrosshairVisible(false)
 	end
 end

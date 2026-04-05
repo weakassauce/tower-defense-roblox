@@ -9,7 +9,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = require(ReplicatedStorage.Shared)
 local _Config = Shared.Config
 
+-- EnemyManager is instantiated per arena via EnemyManager.new(waypoints,
+-- parentFolder). Used to be a module-level singleton that parented
+-- enemies directly into workspace.Enemies; the multiplayer refactor
+-- moved the enemies list, waypoints, and folder onto self so each
+-- player's arena can have its own independent enemy state running
+-- concurrently.
 local EnemyManager = {}
+EnemyManager.__index = EnemyManager
 
 export type EnemyConfig = {
 	enemyType: string,
@@ -19,6 +26,7 @@ export type EnemyConfig = {
 	hp: number,
 	speed: number,
 	reward: number,
+	castleDamage: number, -- HP damage dealt to the castle on reach
 	color: Color3,
 	accentColor: Color3,
 	scale: number,
@@ -35,6 +43,7 @@ export type Enemy = {
 	speed: number,
 	baseSpeed: number,
 	reward: number,
+	castleDamage: number,
 	waypointIndex: number,
 	alive: boolean,
 	reachedEnd: boolean,
@@ -59,9 +68,21 @@ export type Enemy = {
 	originalColors: { [BasePart]: Color3 }?,
 }
 
-local enemies: { Enemy } = {}
-local waypoints: { Vector3 } = {}
-local enemyFolder: Folder? = nil
+export type EnemyManager = {
+	enemies: { Enemy },
+	waypoints: { Vector3 },
+	folder: Folder,
+
+	spawn: (self: EnemyManager, config: EnemyConfig) -> Enemy,
+	damage: (self: EnemyManager, enemy: Enemy, amount: number, killerType: string?) -> (),
+	applySlow: (self: EnemyManager, enemy: Enemy, factor: number, duration: number) -> (),
+	applyPoison: (self: EnemyManager, enemy: Enemy, dps: number, duration: number) -> (),
+	getAlive: (self: EnemyManager) -> { Enemy },
+	getAll: (self: EnemyManager) -> { Enemy },
+	update: (self: EnemyManager, dt: number) -> (),
+	cleanup: (self: EnemyManager) -> (),
+	clear: (self: EnemyManager) -> (),
+}
 
 -- --- Model builders ---
 -- All enemy models are built with their "front" features (eyes, snout,
@@ -193,10 +214,110 @@ local function buildGoblin(model: Model, config: EnemyConfig): (Part, number)
 	)
 	clubHead.CFrame = CFrame.new(2.9 * s, 0.7 * s, -0.8 * s) * CFrame.Angles(0, 0, math.rad(-25))
 
-	attachAll(
-		{ body, head, earL, earR, eyeL, eyeR, nose, armL, armR, legL, legR, cloth1, club, clubHead },
-		model
+	-- Extra detail: fangs jutting from mouth, bracers on forearms,
+	-- dagger strapped to the loincloth, and a small satchel on the back.
+	local fangColor = Color3.fromRGB(240, 230, 210)
+	local fangL = makePart(
+		"FangL",
+		Vector3.new(0.22, 0.55, 0.22) * s,
+		fangColor,
+		Enum.Material.SmoothPlastic
 	)
+	fangL.CFrame = CFrame.new(-0.25 * s, 2.8 * s, -1.15 * s)
+		* CFrame.Angles(math.rad(180), 0, 0)
+	local fangR = makePart(
+		"FangR",
+		Vector3.new(0.22, 0.55, 0.22) * s,
+		fangColor,
+		Enum.Material.SmoothPlastic
+	)
+	fangR.CFrame = CFrame.new(0.25 * s, 2.8 * s, -1.15 * s)
+		* CFrame.Angles(math.rad(180), 0, 0)
+
+	local bracerL = makePart(
+		"BracerL",
+		Vector3.new(0.95, 0.5, 0.95) * s,
+		Color3.fromRGB(55, 38, 22),
+		Enum.Material.Metal
+	)
+	bracerL.CFrame = CFrame.new(-2.3 * s, -0.7 * s, 0)
+	local bracerR = makePart(
+		"BracerR",
+		Vector3.new(0.95, 0.5, 0.95) * s,
+		Color3.fromRGB(55, 38, 22),
+		Enum.Material.Metal
+	)
+	bracerR.CFrame = CFrame.new(2.3 * s, -0.7 * s, 0)
+
+	-- Dagger sheathed on the hip
+	local dagger = makePart(
+		"Dagger",
+		Vector3.new(0.2, 1.1, 0.2) * s,
+		Color3.fromRGB(160, 160, 170),
+		Enum.Material.Metal
+	)
+	dagger.CFrame = CFrame.new(-1.9 * s, -1.6 * s, 0.1 * s)
+		* CFrame.Angles(0, 0, math.rad(15))
+
+	-- Backpack / satchel
+	local pack = makePart(
+		"Pack",
+		Vector3.new(1.8, 1.6, 1.0) * s,
+		Color3.fromRGB(62, 42, 28),
+		Enum.Material.Fabric
+	)
+	pack.CFrame = CFrame.new(0, 0.5 * s, 1.9 * s)
+
+	-- Belt buckle across the loincloth
+	local buckle = makePart(
+		"Buckle",
+		Vector3.new(0.6, 0.5, 0.2) * s,
+		Color3.fromRGB(200, 165, 55),
+		Enum.Material.Metal
+	)
+	buckle.CFrame = CFrame.new(0, -1.55 * s, -1.55 * s)
+
+	-- Clawed toes poking out at the feet
+	local toeL = makePart(
+		"ToeL",
+		Vector3.new(0.3, 0.25, 0.6) * s,
+		Color3.fromRGB(240, 230, 210),
+		Enum.Material.SmoothPlastic
+	)
+	toeL.CFrame = CFrame.new(-0.9 * s, -4.05 * s, -0.7 * s)
+	local toeR = makePart(
+		"ToeR",
+		Vector3.new(0.3, 0.25, 0.6) * s,
+		Color3.fromRGB(240, 230, 210),
+		Enum.Material.SmoothPlastic
+	)
+	toeR.CFrame = CFrame.new(0.9 * s, -4.05 * s, -0.7 * s)
+
+	attachAll({
+		body,
+		head,
+		earL,
+		earR,
+		eyeL,
+		eyeR,
+		nose,
+		armL,
+		armR,
+		legL,
+		legR,
+		cloth1,
+		club,
+		clubHead,
+		fangL,
+		fangR,
+		bracerL,
+		bracerR,
+		dagger,
+		pack,
+		buckle,
+		toeL,
+		toeR,
+	}, model)
 	model.PrimaryPart = body
 	return body, 5.8 * s
 end
@@ -284,7 +405,94 @@ local function buildScout(model: Model, config: EnemyConfig): (Part, number)
 		makePart("Spike3", Vector3.new(0.5, 0.9, 0.5) * s, darker, Enum.Material.SmoothPlastic)
 	spike3.CFrame = CFrame.new(0, 1.85 * s, 1.2 * s) * CFrame.Angles(math.rad(10), 0, 0)
 
-	local allParts = { body, head, snout, earL, earR, eyeL, eyeR, tail, spike1, spike2, spike3 }
+	-- Extra detail: twin fangs on the snout, claws on each paw, a pair
+	-- of collar spikes, and a bushy tail tip.
+	local fang = Color3.fromRGB(240, 230, 210)
+	local fangL = makePart(
+		"FangL",
+		Vector3.new(0.22, 0.5, 0.22) * s,
+		fang,
+		Enum.Material.SmoothPlastic
+	)
+	fangL.CFrame = CFrame.new(-0.3 * s, -0.15 * s, -4.2 * s) * CFrame.Angles(math.rad(180), 0, 0)
+	local fangR = makePart(
+		"FangR",
+		Vector3.new(0.22, 0.5, 0.22) * s,
+		fang,
+		Enum.Material.SmoothPlastic
+	)
+	fangR.CFrame = CFrame.new(0.3 * s, -0.15 * s, -4.2 * s) * CFrame.Angles(math.rad(180), 0, 0)
+
+	-- Front paw claws
+	local clawFL = makePart(
+		"ClawFL",
+		Vector3.new(0.75, 0.2, 0.9) * s,
+		fang,
+		Enum.Material.SmoothPlastic
+	)
+	clawFL.CFrame = CFrame.new(-1.3 * s, -3.25 * s, -2.15 * s)
+	local clawFR = makePart(
+		"ClawFR",
+		Vector3.new(0.75, 0.2, 0.9) * s,
+		fang,
+		Enum.Material.SmoothPlastic
+	)
+	clawFR.CFrame = CFrame.new(1.3 * s, -3.25 * s, -2.15 * s)
+
+	-- Collar spikes around the neck
+	local collar = makePart(
+		"Collar",
+		Vector3.new(2.2, 0.4, 2.2) * s,
+		Color3.fromRGB(40, 25, 10),
+		Enum.Material.Metal
+	)
+	collar.CFrame = CFrame.new(0, 0.9 * s, -2.5 * s)
+	local collarSpikeL = makePart(
+		"CollarSpikeL",
+		Vector3.new(0.2, 0.5, 0.2) * s,
+		Color3.fromRGB(180, 160, 80),
+		Enum.Material.Metal
+	)
+	collarSpikeL.CFrame = CFrame.new(-1 * s, 1.1 * s, -2.5 * s)
+	local collarSpikeR = makePart(
+		"CollarSpikeR",
+		Vector3.new(0.2, 0.5, 0.2) * s,
+		Color3.fromRGB(180, 160, 80),
+		Enum.Material.Metal
+	)
+	collarSpikeR.CFrame = CFrame.new(1 * s, 1.1 * s, -2.5 * s)
+
+	-- Bushy tail tip
+	local tailTip = makePart(
+		"TailTip",
+		Vector3.new(0.9, 0.9, 0.9) * s,
+		darker,
+		Enum.Material.SmoothPlastic,
+		Enum.PartType.Ball
+	)
+	tailTip.CFrame = CFrame.new(0, 2.3 * s, 5.0 * s)
+
+	local allParts = {
+		body,
+		head,
+		snout,
+		earL,
+		earR,
+		eyeL,
+		eyeR,
+		tail,
+		spike1,
+		spike2,
+		spike3,
+		fangL,
+		fangR,
+		clawFL,
+		clawFR,
+		collar,
+		collarSpikeL,
+		collarSpikeR,
+		tailTip,
+	}
 	for _, leg in legParts do
 		table.insert(allParts, leg)
 	end
@@ -410,8 +618,133 @@ local function buildTroll(model: Model, config: EnemyConfig): (Part, number)
 		Enum.PartType.Ball
 	)
 	clubHead.CFrame = CFrame.new(4.6 * s, 1.8 * s, -1.7 * s)
+	-- Extra detail parts get collected here so a single attachAll call
+	-- below pulls them into the model. (attachAll is what gives them
+	-- their welds; a loose part would never render with the model.)
+	local extras: { Part } = {}
 
-	attachAll({
+	-- Spikes studding the club head for a meaner silhouette
+	for i = 1, 5 do
+		local spikeAngle = (i / 5) * math.pi * 2
+		local sx = 4.6 * s + math.cos(spikeAngle) * 1.0 * s
+		local sz = -1.7 * s + math.sin(spikeAngle) * 1.0 * s
+		local spike = makePart(
+			"ClubSpike_" .. i,
+			Vector3.new(0.35, 0.8, 0.35) * s,
+			Color3.fromRGB(50, 48, 44),
+			Enum.Material.Metal
+		)
+		spike.CFrame = CFrame.new(sx, 1.8 * s, sz)
+			* CFrame.Angles(0, 0, math.rad(math.deg(spikeAngle)))
+		table.insert(extras, spike)
+	end
+
+	-- Extra detail on the troll: rib armor plate, jaw underbite teeth,
+	-- knee guards, shoulder spikes, a cracked stone back plate, and
+	-- huge claws on both hands.
+	local bone = Color3.fromRGB(240, 230, 210)
+
+	-- Underbite teeth (row of small fangs along the lower jaw)
+	for i = 1, 5 do
+		local offset = (i - 3) * 0.45 * s
+		local tooth = makePart(
+			"Tooth_" .. i,
+			Vector3.new(0.25, 0.5, 0.25) * s,
+			bone,
+			Enum.Material.SmoothPlastic
+		)
+		tooth.CFrame = CFrame.new(offset, 4.0 * s, -1.75 * s)
+			* CFrame.Angles(math.rad(180), 0, 0)
+		table.insert(extras, tooth)
+	end
+
+	-- Ribbed chest armor band
+	local chestPlate = makePart(
+		"ChestPlate",
+		Vector3.new(5.0, 1.4, 1.0) * s,
+		Color3.fromRGB(80, 70, 60),
+		Enum.Material.Metal
+	)
+	chestPlate.CFrame = CFrame.new(0, 1.6 * s, -2.4 * s)
+
+	-- Shoulder spikes on both shoulder bulges
+	local spikeSL = makePart(
+		"SpikeSL",
+		Vector3.new(0.45, 1.6, 0.45) * s,
+		bone,
+		Enum.Material.SmoothPlastic
+	)
+	spikeSL.CFrame = CFrame.new(-3.2 * s, 3.7 * s, 0) * CFrame.Angles(math.rad(-15), 0, math.rad(-20))
+	local spikeSR = makePart(
+		"SpikeSR",
+		Vector3.new(0.45, 1.6, 0.45) * s,
+		bone,
+		Enum.Material.SmoothPlastic
+	)
+	spikeSR.CFrame = CFrame.new(3.2 * s, 3.7 * s, 0) * CFrame.Angles(math.rad(-15), 0, math.rad(20))
+
+	-- Left hand claws (right hand holds the club)
+	local clawL1 = makePart(
+		"ClawL1",
+		Vector3.new(0.3, 1.0, 0.3) * s,
+		bone,
+		Enum.Material.SmoothPlastic
+	)
+	clawL1.CFrame = CFrame.new(-3.1 * s, -2.8 * s, -0.3 * s)
+	local clawL2 = makePart(
+		"ClawL2",
+		Vector3.new(0.3, 1.0, 0.3) * s,
+		bone,
+		Enum.Material.SmoothPlastic
+	)
+	clawL2.CFrame = CFrame.new(-2.7 * s, -2.8 * s, -0.3 * s)
+	local clawL3 = makePart(
+		"ClawL3",
+		Vector3.new(0.3, 1.0, 0.3) * s,
+		bone,
+		Enum.Material.SmoothPlastic
+	)
+	clawL3.CFrame = CFrame.new(-3.4 * s, -2.8 * s, -0.1 * s)
+
+	-- Knee guards
+	local kneeL = makePart(
+		"KneeL",
+		Vector3.new(1.4, 0.8, 1.4) * s,
+		Color3.fromRGB(75, 70, 62),
+		Enum.Material.Metal
+	)
+	kneeL.CFrame = CFrame.new(-1.5 * s, -3.4 * s, -0.6 * s)
+	local kneeR = makePart(
+		"KneeR",
+		Vector3.new(1.4, 0.8, 1.4) * s,
+		Color3.fromRGB(75, 70, 62),
+		Enum.Material.Metal
+	)
+	kneeR.CFrame = CFrame.new(1.5 * s, -3.4 * s, -0.6 * s)
+
+	-- Stone back plate
+	local backPlate = makePart(
+		"BackPlate",
+		Vector3.new(4.6, 3.8, 0.9) * s,
+		Color3.fromRGB(110, 100, 85),
+		Enum.Material.Slate
+	)
+	backPlate.CFrame = CFrame.new(0, 0.8 * s, 2.4 * s)
+
+	-- Glowing runes on the back plate
+	for i = 1, 3 do
+		local runeY = -0.3 + (i - 2) * 0.8
+		local rune = makePart(
+			"BackRune_" .. i,
+			Vector3.new(0.5, 0.5, 0.15) * s,
+			Color3.fromRGB(255, 110, 30),
+			Enum.Material.Neon
+		)
+		rune.CFrame = CFrame.new(0, runeY * s + 0.8 * s, 2.9 * s)
+		table.insert(extras, rune)
+	end
+
+	local troll = {
 		body,
 		head,
 		hornL,
@@ -429,7 +762,20 @@ local function buildTroll(model: Model, config: EnemyConfig): (Part, number)
 		cloth1,
 		clubShaft,
 		clubHead,
-	}, model)
+		chestPlate,
+		spikeSL,
+		spikeSR,
+		clawL1,
+		clawL2,
+		clawL3,
+		kneeL,
+		kneeR,
+		backPlate,
+	}
+	for _, p in extras do
+		table.insert(troll, p)
+	end
+	attachAll(troll, model)
 	model.PrimaryPart = body
 	return body, 9.0 * s
 end
@@ -679,33 +1025,34 @@ end
 
 -- --- Public API ---
 
-function EnemyManager.init(waypointList: { Vector3 })
-	waypoints = waypointList
-
-	-- Fresh folder each Play session so hot reloads don't pile up enemies
-	local existing = workspace:FindFirstChild("Enemies")
-	if existing then
-		existing:Destroy()
-	end
-
+-- Build a new EnemyManager bound to this arena. `waypointList` is the
+-- path the enemies walk along (already world-offset by the caller so
+-- EnemyManager doesn't need to know about slot offsets), and
+-- `parentFolder` is the workspace container for the player's arena —
+-- spawned enemy Models are parented to it under an "Enemies" subfolder.
+function EnemyManager.new(waypointList: { Vector3 }, parentFolder: Instance): EnemyManager
+	assert(#waypointList > 0, "EnemyManager.new requires at least one waypoint")
 	local folder = Instance.new("Folder")
 	folder.Name = "Enemies"
-	folder.Parent = workspace
-	enemyFolder = folder
+	folder.Parent = parentFolder
 
-	enemies = {}
+	local self = setmetatable({
+		enemies = {},
+		waypoints = waypointList,
+		folder = folder,
+	}, EnemyManager)
+	return (self :: any) :: EnemyManager
 end
 
-function EnemyManager.spawn(config: EnemyConfig): Enemy
-	assert(#waypoints > 0, "EnemyManager.init(waypoints) must be called first")
-	assert(enemyFolder, "enemyFolder not initialized")
+function EnemyManager.spawn(self: EnemyManager, config: EnemyConfig): Enemy
+	assert(#self.waypoints > 0, "EnemyManager has no waypoints")
 
 	local model, body, barY = buildEnemyModel(config)
 	local hpFill, hpText, hpBillboard = buildHpBar(body, config.hp, barY)
 
-	local startPos = waypoints[1]
+	local startPos = self.waypoints[1]
 	model:PivotTo(CFrame.new(startPos))
-	model.Parent = enemyFolder
+	model.Parent = self.folder
 
 	local enemy: Enemy = {
 		model = model,
@@ -718,6 +1065,7 @@ function EnemyManager.spawn(config: EnemyConfig): Enemy
 		speed = config.speed,
 		baseSpeed = config.speed,
 		reward = config.reward,
+		castleDamage = config.castleDamage,
 		waypointIndex = 2, -- head toward the second waypoint (we already stand on the first)
 		alive = true,
 		reachedEnd = false,
@@ -741,7 +1089,7 @@ function EnemyManager.spawn(config: EnemyConfig): Enemy
 		originalColors = nil,
 	}
 
-	table.insert(enemies, enemy)
+	table.insert(self.enemies, enemy)
 	return enemy
 end
 
@@ -924,7 +1272,7 @@ local function updateDeath(enemy: Enemy, dt: number)
 	end
 end
 
-function EnemyManager.damage(enemy: Enemy, amount: number, killerType: string?)
+function EnemyManager.damage(_self: EnemyManager, enemy: Enemy, amount: number, killerType: string?)
 	if not enemy.alive then
 		return
 	end
@@ -949,19 +1297,19 @@ function EnemyManager.damage(enemy: Enemy, amount: number, killerType: string?)
 	end
 end
 
-function EnemyManager.applySlow(enemy: Enemy, factor: number, duration: number)
+function EnemyManager.applySlow(_self: EnemyManager, enemy: Enemy, factor: number, duration: number)
 	enemy.speed = enemy.baseSpeed * factor
 	enemy.slowTimer = duration
 end
 
-function EnemyManager.applyPoison(enemy: Enemy, dps: number, duration: number)
+function EnemyManager.applyPoison(_self: EnemyManager, enemy: Enemy, dps: number, duration: number)
 	enemy.poisonDps = math.max(enemy.poisonDps, dps)
 	enemy.poisonTimer = math.max(enemy.poisonTimer, duration)
 end
 
-function EnemyManager.getAlive(): { Enemy }
+function EnemyManager.getAlive(self: EnemyManager): { Enemy }
 	local alive = {}
-	for _, e in enemies do
+	for _, e in self.enemies do
 		if e.alive then
 			table.insert(alive, e)
 		end
@@ -972,8 +1320,8 @@ end
 -- All enemies including dead/reachedEnd ones that haven't been cleaned yet.
 -- Used by the main loop to find enemies that need to have their reward
 -- paid or HP damage applied to the base.
-function EnemyManager.getAll(): { Enemy }
-	return enemies
+function EnemyManager.getAll(self: EnemyManager): { Enemy }
+	return self.enemies
 end
 
 -- Walk animation parameters keyed on silhouette (not realm-specific
@@ -987,8 +1335,9 @@ local WALK_PARAMS: { [string]: { bounce: number, wobble: number, freq: number } 
 
 local DEFAULT_WALK = WALK_PARAMS.goblin
 
-function EnemyManager.update(dt: number)
-	for _, enemy in enemies do
+function EnemyManager.update(self: EnemyManager, dt: number)
+	local waypoints = self.waypoints
+	for _, enemy in self.enemies do
 		if enemy.dying and not enemy.destroyed then
 			updateDeath(enemy, dt)
 			continue
@@ -1008,7 +1357,7 @@ function EnemyManager.update(dt: number)
 		-- Poison DoT — killed by poison counts as a poison death
 		if enemy.poisonTimer > 0 then
 			enemy.poisonTimer -= dt
-			EnemyManager.damage(enemy, enemy.poisonDps * dt, "poison")
+			EnemyManager.damage(self, enemy, enemy.poisonDps * dt, "poison")
 			if not enemy.alive then
 				continue
 			end
@@ -1064,7 +1413,8 @@ end
 
 -- Remove fully destroyed enemies from the list. Dying-but-still-animating
 -- enemies are kept so their animation can play out.
-function EnemyManager.cleanup()
+function EnemyManager.cleanup(self: EnemyManager)
+	local enemies = self.enemies
 	for i = #enemies, 1, -1 do
 		if enemies[i].destroyed then
 			table.remove(enemies, i)
@@ -1072,13 +1422,13 @@ function EnemyManager.cleanup()
 	end
 end
 
-function EnemyManager.clear()
-	for _, enemy in enemies do
+function EnemyManager.clear(self: EnemyManager)
+	for _, enemy in self.enemies do
 		if enemy.model.Parent then
 			enemy.model:Destroy()
 		end
 	end
-	enemies = {}
+	self.enemies = {}
 end
 
 return EnemyManager

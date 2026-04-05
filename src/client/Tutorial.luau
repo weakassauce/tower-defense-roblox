@@ -1,9 +1,14 @@
 --!strict
 -- src/client/Tutorial.luau
--- Short, visual, guided tutorial. Shows a Yes/No prompt first, then walks
--- through 10 steps. Each step has a one-line instruction + big emoji icon,
--- a step counter, and (where applicable) a highlighted element with a
--- bouncing arrow pointer.
+-- Guided tutorial with two phases:
+--   1. Lobby phase: a trail of glowing ground-chevrons leads the player
+--      from their spawn to the Realm Defense portal. Auto-advances once
+--      they step into an arena.
+--   2. Arena phase: screen-space bouncing arrow points at HUD buttons,
+--      auto-advancing as the player picks a tower, places it, starts a
+--      wave, opens the inventory, etc.
+-- Each step has a one-line instruction + big emoji icon, a step counter,
+-- and a Skip button that aborts the whole tutorial.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -19,15 +24,24 @@ local COLOR_ACCENT_BRIGHT = Color3.fromRGB(232, 194, 143)
 local COLOR_TEXT = Color3.fromRGB(255, 255, 255)
 local COLOR_TEXT_DIM = Color3.fromRGB(200, 180, 140)
 local COLOR_HIGHLIGHT = Color3.fromRGB(255, 215, 100)
+local COLOR_GROUND_ARROW = Color3.fromRGB(255, 210, 90)
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
+-- Step kinds:
+--   walkTo:    build ground-arrow chevron trail to a world target,
+--              auto-advances when conditionName is met
+--   click:     point screen arrow at a HUD element, auto-advances when
+--              conditionName is met
+--   manual:    wait for the user to click NEXT
 type Step = {
+	kind: "walkTo" | "click" | "manual",
 	icon: string,
 	text: string,
+	-- click steps: name of the HUD element to point the screen arrow at
 	target: string?,
-	manual: boolean?,
+	-- condition to auto-advance on (walkTo + click steps)
 	conditionName: string?,
 }
 
@@ -35,40 +49,78 @@ type Step = {
 
 local function buildSteps(): { Step }
 	return {
-		{ icon = "👋", text = "Welcome! Let's get started.", manual = true },
-		{ icon = "📊", text = "Your stats live here.", target = "SidePanel", manual = true },
 		{
+			kind = "manual",
+			icon = "👋",
+			text = "Welcome! Let me show you around.",
+		},
+		{
+			kind = "walkTo",
+			icon = "🏰",
+			text = "Walk into the REALM DEFENSE portal. Follow the arrows!",
+			conditionName = "enteredArena",
+		},
+		{
+			kind = "click",
 			icon = "🏹",
-			text = "Pick a tower.",
+			text = "Click a tower in the bottom panel.",
 			target = "TowerPanel",
 			conditionName = "towerSelected",
 		},
 		{
+			kind = "click",
 			icon = "🗺️",
-			text = "Click a grass cell to place it.",
+			text = "Now click a grass tile to place it.",
 			conditionName = "towerPlaced",
 		},
 		{
+			kind = "click",
 			icon = "⚔️",
-			text = "Start the wave!",
+			text = "Press the green button to start the first wave.",
 			target = "WaveBtn",
 			conditionName = "waveStarted",
 		},
-		{ icon = "🏰", text = "Defend the castle!", manual = true },
-		{ icon = "🎒", text = "Right-click a placed tower to pick it up.", manual = true },
+		-- Gun step comes IMMEDIATELY after the wave starts (no manual
+		-- "defend the castle" intermission) so the player still has
+		-- active enemies on the field to shoot at while the tutorial
+		-- is teaching the gun. Auto-advances on the first trigger pull.
 		{
+			kind = "click",
+			icon = "🎯",
+			text = "Wave incoming! Tap enemies with your starter pistol to help your towers.",
+			conditionName = "gunFired",
+		},
+		{
+			kind = "click",
+			icon = "🔫",
+			text = "Open the armory to buy stronger guns with your gold.",
+			target = "ShopBtn",
+			conditionName = "shopOpened",
+		},
+		{
+			kind = "click",
+			icon = "🎒",
+			text = "Use the PICKUP button, then tap a placed tower to store it.",
+			conditionName = "towerPickedUp",
+		},
+		{
+			kind = "click",
 			icon = "📦",
-			text = "Open your inventory.",
+			text = "Tap the backpack button to open your inventory.",
 			target = "InventoryBtn",
 			conditionName = "inventoryOpened",
 		},
 		{
+			kind = "click",
 			icon = "💰",
-			text = "Sell or re-place items from here.",
-			target = "InventoryPanel",
-			manual = true,
+			text = "Sell items for gold, or re-place them on any grass tile.",
+			conditionName = "inventoryItemUsed",
 		},
-		{ icon = "✨", text = "You're ready. Good luck!", manual = true },
+		{
+			kind = "manual",
+			icon = "✨",
+			text = "You're ready! Unlock more realms by reaching high waves.",
+		},
 	}
 end
 
@@ -80,13 +132,30 @@ local tooltipText: TextLabel? = nil
 local counterLabel: TextLabel? = nil
 local nextBtn: TextButton? = nil
 local pointerLabel: TextLabel? = nil
+local groundArrows: { BasePart } = {}
+local groundArrowsFolder: Folder? = nil
 local heartbeatConn: RBXScriptConnection? = nil
 
 local currentStepIndex = 0
 local steps: { Step } = {}
 local stepStartTowerCount = 0
 local stepStartWaveNum = 0
+local stepStartShotsFired = 0
+local stepStartInventoryCount = 0
+local enteredArenaFlag = false
 local onCompleteCallback: (() -> ())? = nil
+-- Bumped every time a step changes (or the tutorial finishes). The
+-- manual-step auto-advance timer captures the generation at schedule
+-- time and no-ops if it no longer matches when it fires, so a player
+-- who skips / finishes before the timer expires doesn't get advanced
+-- into a destroyed tutorial.
+local stepGeneration = 0
+
+-- Seconds a "manual" (text-only) step stays on screen before auto-
+-- advancing. Manual steps are just welcome / goodbye flavor text with
+-- no in-world task to complete, so we run them on a timer instead of
+-- making the player click NEXT.
+local MANUAL_STEP_AUTO_ADVANCE_SECONDS = 3.5
 
 -- --- Helpers ---
 
@@ -104,6 +173,193 @@ local function addStroke(inst: GuiObject, color: Color3, thickness: number): UIS
 	return s
 end
 
+-- --- Ground arrow helpers ---
+
+local function clearGroundArrows()
+	for _, p in groundArrows do
+		if p.Parent then
+			p:Destroy()
+		end
+	end
+	groundArrows = {}
+	if groundArrowsFolder then
+		groundArrowsFolder:Destroy()
+		groundArrowsFolder = nil
+	end
+end
+
+-- Build a single glowing chevron wedge pointing along `direction`, sitting
+-- slightly above the ground at `pos`. Returns the WedgePart so the
+-- heartbeat can animate it.
+local function makeGroundChevron(pos: Vector3, direction: Vector3): BasePart
+	local wedge = Instance.new("WedgePart")
+	wedge.Name = "TutorialChevron"
+	wedge.Size = Vector3.new(4, 0.4, 5)
+	wedge.Anchored = true
+	wedge.CanCollide = false
+	wedge.CanQuery = false
+	wedge.CanTouch = false
+	wedge.CastShadow = false
+	wedge.Material = Enum.Material.Neon
+	wedge.Color = COLOR_GROUND_ARROW
+	wedge.Transparency = 0.15
+	wedge.TopSurface = Enum.SurfaceType.Smooth
+	wedge.BottomSurface = Enum.SurfaceType.Smooth
+
+	-- WedgePart's pointy edge faces +Z in local space. Orient it so that
+	-- its point aims in `direction`.
+	local look = Vector3.new(direction.X, 0, direction.Z)
+	if look.Magnitude < 1e-3 then
+		look = Vector3.new(0, 0, 1)
+	end
+	local lookUnit = look.Unit
+	wedge.CFrame = CFrame.lookAt(pos, pos + lookUnit)
+		* CFrame.Angles(0, math.rad(180), 0) -- WedgePart points -Z by default
+
+	return wedge
+end
+
+-- Try to find the Realm Defense portal's shimmer part in the lobby. This
+-- is what the ground trail should guide the player toward. Returns nil
+-- if the lobby hasn't been built yet (tutorial should retry next frame).
+local function findDefensePortalPart(): BasePart?
+	local lobby = workspace:FindFirstChild("Lobby")
+	if not lobby then
+		return nil
+	end
+	local portal = lobby:FindFirstChild("Portal_defense")
+	if not portal then
+		return nil
+	end
+	return portal:FindFirstChild("Shimmer") :: BasePart?
+end
+
+-- Fixed number of chevrons in the trail pool. 8 is enough to span the
+-- 77-stud walk from the spawn pad to the defense portal with roughly
+-- 9-stud spacing. We pre-allocate once and then reposition them each
+-- frame so the trail tracks the player without any destroy/rebuild
+-- flicker or stale-position lag.
+local GROUND_ARROW_POOL_SIZE = 8
+local GROUND_ARROW_LEAD_OFFSET = 4 -- studs in front of HRP where the trail starts
+local GROUND_ARROW_TAIL_GAP = 6 -- studs short of the portal where the trail ends
+
+-- Ensure the ground arrow pool + folder exist. Creates them on first
+-- call; subsequent calls just return the existing pool. Splitting this
+-- off lets updateGroundTrail run every heartbeat without re-parenting
+-- anything.
+local function ensureGroundArrowPool()
+	if groundArrowsFolder and groundArrowsFolder.Parent then
+		return
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = "TutorialGroundArrows"
+	folder.Parent = workspace
+	groundArrowsFolder = folder
+	groundArrows = {}
+	for _ = 1, GROUND_ARROW_POOL_SIZE do
+		local chevron = makeGroundChevron(Vector3.new(0, -1000, 0), Vector3.new(0, 0, 1))
+		chevron.Transparency = 1 -- hidden until first update
+		chevron.Parent = folder
+		table.insert(groundArrows, chevron)
+	end
+end
+
+-- Reposition every pooled chevron so the trail leads from the player's
+-- current position to the defense portal. Runs every heartbeat (NOT on
+-- a timer) so the arrows stay glued to where the player is right now —
+-- lag-free responsiveness instead of a 0.5s rebuild window.
+local function updateGroundTrail()
+	local character = player.Character
+	if not character then
+		return
+	end
+	local hrp = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not hrp then
+		return
+	end
+	local target = findDefensePortalPart()
+	if not target then
+		return
+	end
+
+	ensureGroundArrowPool()
+
+	local startPos = hrp.Position
+	local endPos = Vector3.new(target.Position.X, startPos.Y, target.Position.Z)
+	local delta = endPos - startPos
+	local dist = delta.Magnitude
+	if dist < 4 then
+		-- Close enough; hide the trail so arrows don't pile up on the portal.
+		for _, chevron in groundArrows do
+			chevron.Transparency = 1
+		end
+		return
+	end
+	local dir = delta.Unit
+
+	local trailStart = startPos + dir * GROUND_ARROW_LEAD_OFFSET
+	local trailEnd = endPos - dir * GROUND_ARROW_TAIL_GAP
+	local trailLen = (trailEnd - trailStart).Magnitude
+	if trailLen < 2 then
+		for _, chevron in groundArrows do
+			chevron.Transparency = 1
+		end
+		return
+	end
+
+	-- Chevrons sit ~1 stud above the walkway stone. HRP is 3 studs above
+	-- the feet, so (HRP.Y - 2.6) lands just above the plaza surface.
+	local trailY = startPos.Y - 2.6
+
+	-- Scale usage of the pool to the trail length so a short walk
+	-- doesn't cram 8 chevrons on top of each other. At 10 studs/spacing
+	-- we want roughly trailLen / 10 chevrons, clamped to the pool size.
+	local active = math.clamp(math.floor(trailLen / 10) + 1, 2, GROUND_ARROW_POOL_SIZE)
+
+	for i, chevron in groundArrows do
+		if i <= active then
+			local t = active == 1 and 0.5 or (i - 1) / (active - 1)
+			local p = trailStart + dir * (trailLen * t)
+			-- Fully recompute the CFrame (not just position) so the
+			-- chevron instantly rotates if the player circles around
+			-- the portal. Using CFrame.lookAt keeps the point always
+			-- facing the next chevron.
+			chevron.CFrame = CFrame.lookAt(Vector3.new(p.X, trailY, p.Z), Vector3.new(p.X, trailY, p.Z) + dir)
+				* CFrame.Angles(0, math.rad(180), 0)
+		else
+			-- Park unused chevrons far below the map so they don't
+			-- visually spam. Also fully transparent as a belt-and-
+			-- suspenders hide.
+			chevron.CFrame = CFrame.new(0, -1000, 0)
+			chevron.Transparency = 1
+		end
+	end
+end
+
+-- Per-frame transparency pulse so the chevrons draw the eye. Position
+-- updates happen in updateGroundTrail; this only touches transparency
+-- so the pulse is decoupled from the (much more frequent) position
+-- refresh and both can run every heartbeat without stomping each other.
+local function animateGroundArrows(t: number, active: boolean)
+	for i, chevron in groundArrows do
+		if not chevron.Parent then
+			continue
+		end
+		if not active then
+			chevron.Transparency = 1
+			continue
+		end
+		-- Parked chevrons (Y ~= -1000) stay hidden.
+		if chevron.Position.Y < -500 then
+			chevron.Transparency = 1
+			continue
+		end
+		local phase = t * 3 + i * 0.35
+		local alpha = 0.5 + 0.5 * math.sin(phase)
+		chevron.Transparency = 0.1 + alpha * 0.3
+	end
+end
+
 -- --- Overlay builder ---
 
 local function buildOverlay()
@@ -114,9 +370,9 @@ local function buildOverlay()
 	screen.DisplayOrder = 50
 	screen.Parent = playerGui
 
-	-- Big bouncing arrow pointer. Parented inside the Hud ScreenGui so
-	-- AbsolutePosition math is in the same coordinate space as the HUD
-	-- elements we're pointing at (avoids any cross-ScreenGui inset mismatch).
+	-- Big bouncing arrow pointer parented in the Hud ScreenGui so
+	-- AbsolutePosition math shares the same coordinate space as the HUD
+	-- elements we're pointing at.
 	local hudScreen = Hud.getScreen() or screen
 
 	local pl = Instance.new("TextLabel")
@@ -147,7 +403,6 @@ local function buildOverlay()
 	addCorner(tf, 14)
 	addStroke(tf, COLOR_ACCENT, 3)
 
-	-- Step counter (top-left)
 	counterLabel = Instance.new("TextLabel")
 	counterLabel.Name = "Counter"
 	counterLabel.Size = UDim2.fromOffset(140, 22)
@@ -160,7 +415,6 @@ local function buildOverlay()
 	counterLabel.TextXAlignment = Enum.TextXAlignment.Left
 	counterLabel.Parent = tf
 
-	-- Skip (top-right)
 	local skip = Instance.new("TextButton")
 	skip.Name = "Skip"
 	skip.Size = UDim2.fromOffset(90, 26)
@@ -179,7 +433,6 @@ local function buildOverlay()
 		Tutorial.finish()
 	end)
 
-	-- Big icon on the left
 	tooltipIcon = Instance.new("TextLabel")
 	tooltipIcon.Name = "Icon"
 	tooltipIcon.Size = UDim2.fromOffset(80, 80)
@@ -190,7 +443,6 @@ local function buildOverlay()
 	tooltipIcon.TextSize = 56
 	tooltipIcon.Parent = tf
 
-	-- Instruction text (right of icon)
 	tooltipText = Instance.new("TextLabel")
 	tooltipText.Name = "Text"
 	tooltipText.Size = UDim2.fromOffset(320, 80)
@@ -198,14 +450,13 @@ local function buildOverlay()
 	tooltipText.BackgroundTransparency = 1
 	tooltipText.Text = ""
 	tooltipText.Font = Enum.Font.GothamBold
-	tooltipText.TextSize = 22
+	tooltipText.TextSize = 20
 	tooltipText.TextColor3 = COLOR_TEXT
 	tooltipText.TextWrapped = true
 	tooltipText.TextXAlignment = Enum.TextXAlignment.Left
 	tooltipText.TextYAlignment = Enum.TextYAlignment.Center
 	tooltipText.Parent = tf
 
-	-- Next button (visible only on manual steps)
 	local nb = Instance.new("TextButton")
 	nb.Name = "Next"
 	nb.Size = UDim2.fromOffset(110, 44)
@@ -226,9 +477,9 @@ local function buildOverlay()
 	end)
 end
 
--- --- Pointer update ---
+-- --- Screen pointer update ---
 
-local function updatePointer(targetName: string?)
+local function updateScreenPointer(targetName: string?)
 	if not pointerLabel then
 		return
 	end
@@ -249,8 +500,6 @@ local function updatePointer(targetName: string?)
 	local targetBottom = target.AbsolutePosition.Y + target.AbsoluteSize.Y
 	local targetCenterX = target.AbsolutePosition.X + target.AbsoluteSize.X / 2
 
-	-- If target is in the top portion of the screen, point up from below;
-	-- otherwise point down from above
 	local bounce = math.sin(os.clock() * 5) * 6
 	if targetTop < screenH * 0.35 then
 		pointerLabel.Text = "⬆"
@@ -264,11 +513,23 @@ end
 
 -- --- Condition checks ---
 
+local function getInventoryCount(): number
+	local state = Hud.getState()
+	if not state or not state.inventory then
+		return 0
+	end
+	return #state.inventory
+end
+
 local function checkCondition(name: string): boolean
-	if name == "towerSelected" then
+	if name == "enteredArena" then
+		return enteredArenaFlag
+	elseif name == "towerSelected" then
 		return Hud.getSelection().towerType ~= ""
 	elseif name == "towerPlaced" then
-		local folder = workspace:FindFirstChild("Towers")
+		local localPlayer = game:GetService("Players").LocalPlayer
+		local arena = localPlayer and workspace:FindFirstChild("PlayerArena_" .. localPlayer.UserId)
+		local folder = arena and arena:FindFirstChild("Towers") or nil
 		return folder ~= nil and #folder:GetChildren() > stepStartTowerCount
 	elseif name == "waveStarted" then
 		local state = Hud.getState()
@@ -276,6 +537,34 @@ local function checkCondition(name: string): boolean
 	elseif name == "inventoryOpened" then
 		local panel = Hud.getElement("InventoryPanel")
 		return panel ~= nil and panel.Visible == true
+	elseif name == "shopOpened" then
+		local panel = Hud.getElement("ShopPanel")
+		return panel ~= nil and panel.Visible == true
+	elseif name == "gunOwned" then
+		-- True as soon as the player owns any gun. Checked against the
+		-- live state broadcast so it ticks once the BuyGun remote round-
+		-- trips.
+		local state = Hud.getState()
+		if not state or not state.ownedGuns then
+			return false
+		end
+		for _ in pairs(state.ownedGuns) do
+			return true
+		end
+		return false
+	elseif name == "gunFired" then
+		-- Auto-advance the moment the player pulls the trigger at least
+		-- once during this step. Placement calls Hud.incrementShotsFired
+		-- for every FireGun remote fire.
+		return Hud.getShotsFired() > stepStartShotsFired
+	elseif name == "towerPickedUp" then
+		-- Inventory grew since the step started → a placed tower was
+		-- picked up (or placed from panel, then picked back up).
+		return getInventoryCount() > stepStartInventoryCount
+	elseif name == "inventoryItemUsed" then
+		-- Inventory shrank since the step started → the player either
+		-- sold or re-placed an item from their backpack.
+		return getInventoryCount() < stepStartInventoryCount
 	end
 	return false
 end
@@ -289,6 +578,11 @@ local function showStep(index: number)
 		return
 	end
 
+	-- New step, new generation: any pending manual-step auto-advance
+	-- task from the previous step is now stale and will be ignored.
+	stepGeneration += 1
+	local thisGeneration = stepGeneration
+
 	if tooltipText then
 		tooltipText.Text = step.text
 	end
@@ -298,8 +592,16 @@ local function showStep(index: number)
 	if counterLabel then
 		counterLabel.Text = string.format("STEP %d / %d", index, #steps)
 	end
+	-- Next button is shown on every step as an escape hatch. Normal
+	-- flow is:
+	--   * "click" / "walkTo" steps auto-advance when their condition
+	--     fires (e.g. tower placed, wave started).
+	--   * "manual" flavor-text steps auto-advance on a timer (below).
+	-- The button is purely a fallback so a player never gets stuck if
+	-- a condition check misses, or who wants to skip through flavor
+	-- text faster than the timer.
 	if nextBtn then
-		nextBtn.Visible = step.manual == true
+		nextBtn.Visible = true
 		nextBtn.Text = (index == #steps) and "FINISH" or "NEXT  →"
 	end
 
@@ -307,20 +609,50 @@ local function showStep(index: number)
 	if step.conditionName == "towerSelected" then
 		Hud.clearSelection() -- force the user to actually click a tower button
 	elseif step.conditionName == "towerPlaced" then
-		local folder = workspace:FindFirstChild("Towers")
+		local localPlayer = game:GetService("Players").LocalPlayer
+		local arena = localPlayer and workspace:FindFirstChild("PlayerArena_" .. localPlayer.UserId)
+		local folder = arena and arena:FindFirstChild("Towers") or nil
 		stepStartTowerCount = folder and #folder:GetChildren() or 0
 	elseif step.conditionName == "waveStarted" then
 		local state = Hud.getState()
 		stepStartWaveNum = (state and state.waveNum) or 0
 	elseif step.conditionName == "inventoryOpened" then
-		-- Force the inventory panel closed so the user has to open it
 		local panel = Hud.getElement("InventoryPanel")
 		if panel then
 			panel.Visible = false
 		end
+	elseif step.conditionName == "gunFired" then
+		stepStartShotsFired = Hud.getShotsFired()
+	elseif
+		step.conditionName == "towerPickedUp"
+		or step.conditionName == "inventoryItemUsed"
+	then
+		stepStartInventoryCount = getInventoryCount()
 	end
 
-	updatePointer(step.target)
+	-- Clean up visuals from the previous step before building this one's.
+	clearGroundArrows()
+	updateScreenPointer(nil)
+
+	if step.kind == "walkTo" then
+		-- Spin up the pool and do an immediate position update so the
+		-- trail is visible the frame this step starts. The heartbeat
+		-- below keeps it glued to the player's position every frame.
+		ensureGroundArrowPool()
+		updateGroundTrail()
+	elseif step.kind == "click" and step.target then
+		updateScreenPointer(step.target)
+	elseif step.kind == "manual" then
+		-- Flavor-text step with no task to complete — auto-advance on
+		-- a timer. The generation check makes this a safe no-op if the
+		-- player skipped the tutorial or moved on before the delay.
+		task.delay(MANUAL_STEP_AUTO_ADVANCE_SECONDS, function()
+			if stepGeneration ~= thisGeneration then
+				return
+			end
+			Tutorial._advance()
+		end)
+	end
 end
 
 function Tutorial._advance()
@@ -332,19 +664,26 @@ function Tutorial._advance()
 	showStep(currentStepIndex)
 end
 
+-- Called from init.client's EnterRealm listener so the lobby-phase step
+-- knows it's time to auto-advance.
+function Tutorial.notifyArenaEntered()
+	enteredArenaFlag = true
+end
+
 -- --- Public API ---
 
 function Tutorial.start(onComplete: (() -> ())?)
 	onCompleteCallback = onComplete
 	steps = buildSteps()
 	currentStepIndex = 0
+	enteredArenaFlag = false
 	buildOverlay()
 	-- Yield one frame so the overlay + HUD layouts are computed before
 	-- we query any AbsolutePosition/AbsoluteSize for highlighting.
 	RunService.Heartbeat:Wait()
 	Tutorial._advance()
 
-	heartbeatConn = RunService.Heartbeat:Connect(function()
+	heartbeatConn = RunService.Heartbeat:Connect(function(_dt)
 		if not screen or currentStepIndex <= 0 or currentStepIndex > #steps then
 			return
 		end
@@ -353,12 +692,21 @@ function Tutorial.start(onComplete: (() -> ())?)
 			return
 		end
 
-		-- Refresh the pointer each frame so it tracks layout changes
-		if step.target then
-			updatePointer(step.target)
+		-- Refresh the on-screen pointer each frame so it tracks layout
+		-- changes (e.g. HUD button moving as wave number grows).
+		if step.kind == "click" and step.target then
+			updateScreenPointer(step.target)
 		end
 
-		-- Auto-advance if the step's condition is met
+		-- Ground trail tracks the player's HRP every single frame
+		-- (no rebuild timer) so the arrows are instantly responsive
+		-- to movement. The chevrons are a fixed-size pool so this is
+		-- just 8 CFrame writes per frame — cheap.
+		if step.kind == "walkTo" then
+			updateGroundTrail()
+			animateGroundArrows(os.clock(), true)
+		end
+
 		if step.conditionName and checkCondition(step.conditionName) then
 			Tutorial._advance()
 		end
@@ -366,12 +714,14 @@ function Tutorial.start(onComplete: (() -> ())?)
 end
 
 function Tutorial.finish()
+	-- Bumping the generation makes any in-flight task.delay from a
+	-- manual step's auto-advance a no-op when it eventually fires.
+	stepGeneration += 1
 	if heartbeatConn then
 		heartbeatConn:Disconnect()
 		heartbeatConn = nil
 	end
-	-- Pointer lives in the Hud screen, not the Tutorial screen, so
-	-- destroy it explicitly before tearing down the Tutorial screen.
+	clearGroundArrows()
 	if pointerLabel then
 		pointerLabel:Destroy()
 	end
@@ -385,6 +735,7 @@ function Tutorial.finish()
 	nextBtn = nil
 	pointerLabel = nil
 	currentStepIndex = 0
+	enteredArenaFlag = false
 	if onCompleteCallback then
 		local cb = onCompleteCallback
 		onCompleteCallback = nil
