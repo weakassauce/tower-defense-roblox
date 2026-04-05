@@ -183,7 +183,8 @@ end
 local function buildSidePanel(parent: Instance)
 	local panel = makeFrame(parent, "SidePanel")
 	panel.Size = UDim2.fromOffset(260, 680)
-	panel.Position = UDim2.fromOffset(20, 20)
+	panel.AnchorPoint = Vector2.new(0, 0.5)
+	panel.Position = UDim2.new(0, 20, 0.5, 0)
 	panel.BackgroundTransparency = 0.1
 	addCorner(panel, 14)
 	addStroke(panel, COLOR_ACCENT, 2)
