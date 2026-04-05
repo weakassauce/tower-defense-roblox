@@ -278,7 +278,7 @@ function Placement.init()
 			camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
 		end
 
-		if not enabled or Hud.isGameOver() or mode ~= "overview" then
+		if not enabled or Hud.isGameOver() then
 			hidePreview()
 			return
 		end
@@ -302,7 +302,7 @@ function Placement.init()
 
 	-- Mouse handlers: left = place, right = pickup
 	UserInputService.InputBegan:Connect(function(input, processed)
-		if processed or not enabled or Hud.isGameOver() or mode ~= "overview" then
+		if processed or not enabled or Hud.isGameOver() then
 			return
 		end
 
