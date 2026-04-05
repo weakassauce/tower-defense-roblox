@@ -201,7 +201,7 @@ local function buildWizard(model: Model, def: TowerDefs.TowerDef, pos: Vector3):
 	-- Glowing orb
 	local orb =
 		makeSphere(model, "Orb", 2.6, Vector3.new(cx, 10, cz), def.accent, Enum.Material.Neon)
-	addPointLight(orb, def.accent, 16, 3)
+	addPointLight(orb, def.accent, 10, 1.2)
 
 	-- Tip
 	makeSphere(model, "Finial", 0.8, Vector3.new(cx, 11.8, cz), def.accent, Enum.Material.Neon)
@@ -293,7 +293,7 @@ local function buildCannon(model: Model, def: TowerDefs.TowerDef, pos: Vector3):
 		def.accent,
 		Enum.Material.Neon
 	)
-	addPointLight(ember, def.accent, 10, 2)
+	addPointLight(ember, def.accent, 7, 0.8)
 
 	return barrel
 end
@@ -323,7 +323,7 @@ local function buildFrost(model: Model, def: TowerDefs.TowerDef, pos: Vector3): 
 		Enum.Material.Glass
 	)
 	center.Transparency = 0.1
-	addPointLight(center, def.color, 14, 3)
+	addPointLight(center, def.color, 9, 1.2)
 
 	-- Surrounding shorter crystals
 	local spots =
@@ -379,7 +379,7 @@ local function buildStorm(model: Model, def: TowerDefs.TowerDef, pos: Vector3): 
 	-- Pulsing orb
 	local orb =
 		makeSphere(model, "Orb", 2.6, Vector3.new(cx, 11, cz), def.accent, Enum.Material.Neon)
-	addPointLight(orb, def.accent, 18, 4)
+	addPointLight(orb, def.accent, 11, 1.5)
 
 	return orb
 end
@@ -439,7 +439,7 @@ local function buildAlchemist(model: Model, def: TowerDefs.TowerDef, pos: Vector
 		def.accent,
 		Enum.Material.Neon
 	)
-	addPointLight(brew, def.accent, 12, 2.5)
+	addPointLight(brew, def.accent, 8, 1)
 
 	return cauldron
 end
@@ -468,7 +468,7 @@ local function buildInferno(model: Model, def: TowerDefs.TowerDef, pos: Vector3)
 	-- Central flame (use a ball for simplicity)
 	local flame =
 		makeSphere(model, "Flame", 2.4, Vector3.new(cx, 7, cz), def.accent, Enum.Material.Neon)
-	addPointLight(flame, def.accent, 16, 4)
+	addPointLight(flame, def.accent, 10, 1.5)
 
 	return flame
 end

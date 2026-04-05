@@ -39,9 +39,9 @@ function LightingSetup.apply()
 		bloom = Instance.new("BloomEffect")
 		bloom.Parent = Lighting
 	end
-	bloom.Intensity = 0.9
-	bloom.Size = 32
-	bloom.Threshold = 0.85
+	bloom.Intensity = 0.55
+	bloom.Size = 28
+	bloom.Threshold = 0.95
 
 	-- --- Sun rays ---
 	local sunRays = Lighting:FindFirstChildOfClass("SunRaysEffect")
