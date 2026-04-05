@@ -25,6 +25,7 @@ export type Enemy = {
 	root: Part,
 	hpFill: Frame,
 	hpText: TextLabel,
+	hpBillboard: BillboardGui,
 	hp: number,
 	maxHp: number,
 	speed: number,
@@ -40,6 +41,17 @@ export type Enemy = {
 	poisonDps: number,
 	enemyType: string,
 	color: Color3,
+	deathColor: Color3,
+	deathY: number,
+	walkPhase: number,
+	-- Death animation state
+	dying: boolean,
+	destroyed: boolean,
+	deathType: string,
+	deathTimer: number,
+	deathDuration: number,
+	deathStartCF: CFrame,
+	originalColors: { [BasePart]: Color3 }?,
 }
 
 local enemies: { Enemy } = {}
@@ -436,7 +448,11 @@ local function buildEnemyModel(config: EnemyConfig): (Model, Part, number)
 	end
 end
 
-local function buildHpBar(parent: Part, maxHp: number, barY: number): (Frame, TextLabel)
+local function buildHpBar(
+	parent: Part,
+	maxHp: number,
+	barY: number
+): (Frame, TextLabel, BillboardGui)
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "HpBar"
 	billboard.Size = UDim2.fromOffset(130, 36)
@@ -490,7 +506,7 @@ local function buildHpBar(parent: Part, maxHp: number, barY: number): (Frame, Te
 	fillCorner.CornerRadius = UDim.new(0, 5)
 	fillCorner.Parent = fill
 
-	return fill, hpText
+	return fill, hpText, billboard
 end
 
 -- --- Public API ---
@@ -517,7 +533,7 @@ function EnemyManager.spawn(config: EnemyConfig): Enemy
 	assert(enemyFolder, "enemyFolder not initialized")
 
 	local model, body, barY = buildEnemyModel(config)
-	local hpFill, hpText = buildHpBar(body, config.hp, barY)
+	local hpFill, hpText, hpBillboard = buildHpBar(body, config.hp, barY)
 
 	local startPos = waypoints[1]
 	model:PivotTo(CFrame.new(startPos))
@@ -528,6 +544,7 @@ function EnemyManager.spawn(config: EnemyConfig): Enemy
 		root = body,
 		hpFill = hpFill,
 		hpText = hpText,
+		hpBillboard = hpBillboard,
 		hp = config.hp,
 		maxHp = config.hp,
 		speed = config.speed,
@@ -543,21 +560,209 @@ function EnemyManager.spawn(config: EnemyConfig): Enemy
 		poisonDps = 0,
 		enemyType = config.enemyType,
 		color = config.color,
+		deathColor = config.color,
+		deathY = barY * 0.4,
+		walkPhase = math.random() * math.pi * 2, -- random phase so enemies don't bounce in sync
+		dying = false,
+		destroyed = false,
+		deathType = "",
+		deathTimer = 0,
+		deathDuration = 0,
+		deathStartCF = CFrame.new(startPos),
+		originalColors = nil,
 	}
 
 	table.insert(enemies, enemy)
 	return enemy
 end
 
-function EnemyManager.damage(enemy: Enemy, amount: number)
+-- --- Death animation helpers ---
+
+local function captureModelColors(model: Model): { [BasePart]: Color3 }
+	local colors: { [BasePart]: Color3 } = {}
+	for _, child in model:GetDescendants() do
+		if child:IsA("BasePart") then
+			colors[child] = child.Color
+		end
+	end
+	return colors
+end
+
+local function setModelColor(model: Model, color: Color3)
+	for _, child in model:GetDescendants() do
+		if child:IsA("BasePart") then
+			child.Color = color
+		end
+	end
+end
+
+local function setModelTransparency(model: Model, transparency: number)
+	for _, child in model:GetDescendants() do
+		if child:IsA("BasePart") then
+			child.Transparency = math.clamp(transparency, 0, 1)
+		end
+	end
+end
+
+local function setModelMaterial(model: Model, material: Enum.Material)
+	for _, child in model:GetDescendants() do
+		if child:IsA("BasePart") then
+			child.Material = material
+		end
+	end
+end
+
+-- Per-tower death durations
+local DEATH_DURATIONS: { [string]: number } = {
+	basic = 0.7, -- arrow: flop backward
+	sniper = 0.45, -- magic: flash + fade
+	cannon = 3.5, -- boom: physics explosion
+	freeze = 1.4, -- ice: freeze then shatter
+	lightning = 0.6, -- zap: strobe + fade
+	poison = 1.3, -- wilt: tilt and fade
+	flame = 0.9, -- burn: jitter + shrink-fade
+}
+
+local function beginDeath(enemy: Enemy, killerType: string)
+	enemy.alive = false
+	enemy.dying = true
+	enemy.deathType = killerType
+	enemy.deathTimer = 0
+	enemy.deathDuration = DEATH_DURATIONS[killerType] or 0.7
+	enemy.deathStartCF = enemy.model:GetPivot()
+
+	-- Hide the HP bar during the animation
+	if enemy.hpBillboard then
+		enemy.hpBillboard.Enabled = false
+	end
+
+	-- Per-tower setup
+	if killerType == "cannon" then
+		-- Unanchor everything and fling it outward so physics plays out
+		local center = enemy.root.Position
+		for _, child in enemy.model:GetDescendants() do
+			if child:IsA("BasePart") then
+				child.Anchored = false
+				child.CanCollide = true
+				local dx = child.Position.X - center.X
+				local dz = child.Position.Z - center.Z
+				local distSq = dx * dx + dz * dz
+				local dir = if distSq > 0.01
+					then Vector3.new(dx, 0, dz).Unit
+					else Vector3.new(math.random() - 0.5, 0, math.random() - 0.5).Unit
+				child.AssemblyLinearVelocity = dir * (25 + math.random() * 20)
+					+ Vector3.new(0, 35 + math.random() * 25, 0)
+				child.AssemblyAngularVelocity = Vector3.new(
+					(math.random() - 0.5) * 15,
+					(math.random() - 0.5) * 15,
+					(math.random() - 0.5) * 15
+				)
+			end
+		end
+	elseif killerType == "freeze" then
+		-- Save colors, tint everything icy blue, swap to Ice material
+		enemy.originalColors = captureModelColors(enemy.model)
+		setModelColor(enemy.model, Color3.fromRGB(140, 210, 255))
+		setModelMaterial(enemy.model, Enum.Material.Ice)
+	elseif killerType == "lightning" then
+		enemy.originalColors = captureModelColors(enemy.model)
+		setModelColor(enemy.model, Color3.fromRGB(255, 255, 180))
+	elseif killerType == "flame" then
+		setModelColor(enemy.model, Color3.fromRGB(255, 120, 40))
+		setModelMaterial(enemy.model, Enum.Material.Neon)
+	elseif killerType == "sniper" then
+		setModelColor(enemy.model, Color3.fromRGB(255, 255, 255))
+		setModelMaterial(enemy.model, Enum.Material.Neon)
+	end
+end
+
+local function updateDeath(enemy: Enemy, dt: number)
+	enemy.deathTimer += dt
+	local t = math.clamp(enemy.deathTimer / enemy.deathDuration, 0, 1)
+	local kt = enemy.deathType
+	local model = enemy.model
+
+	if kt == "basic" then
+		-- Archer arrow: flop backward like a felled cartoon villain
+		local angle = t * math.rad(95)
+		model:PivotTo(enemy.deathStartCF * CFrame.Angles(angle, 0, 0))
+		if t > 0.55 then
+			setModelTransparency(model, (t - 0.55) / 0.45)
+		end
+	elseif kt == "sniper" then
+		-- Wizard: held bright, then fade out
+		setModelTransparency(model, t * 0.9)
+		-- Spin as it fades
+		model:PivotTo(enemy.deathStartCF * CFrame.Angles(0, t * math.rad(720), 0))
+	elseif kt == "cannon" then
+		-- Physics is doing the work; just fade out near the end
+		if t > 0.7 then
+			setModelTransparency(model, (t - 0.7) / 0.3)
+		end
+	elseif kt == "freeze" then
+		-- Wobble slightly while frozen, then shatter (fade) at the end
+		local wobble = math.sin(enemy.deathTimer * 6) * 0.05
+		model:PivotTo(enemy.deathStartCF * CFrame.Angles(0, 0, wobble))
+		if t > 0.7 then
+			setModelTransparency(model, (t - 0.7) / 0.3)
+		end
+	elseif kt == "lightning" then
+		-- Violently shake + strobe color
+		local shakeX = (math.random() - 0.5) * 1.8
+		local shakeZ = (math.random() - 0.5) * 1.8
+		model:PivotTo(enemy.deathStartCF + Vector3.new(shakeX, 0, shakeZ))
+		if math.floor(enemy.deathTimer * 30) % 2 == 0 then
+			setModelColor(model, Color3.fromRGB(255, 255, 180))
+		else
+			setModelColor(model, Color3.fromRGB(120, 160, 255))
+		end
+		if t > 0.6 then
+			setModelTransparency(model, (t - 0.6) / 0.4)
+		end
+	elseif kt == "poison" then
+		-- Wilt forward slowly, then fade
+		local tilt = t * math.rad(110)
+		model:PivotTo(enemy.deathStartCF * CFrame.Angles(-tilt, 0, 0))
+		-- Slowly sink
+		local sink = t * 0.8
+		model:PivotTo(model:GetPivot() - Vector3.new(0, sink * 0.1, 0))
+		-- Tint green darker
+		if t > 0.4 then
+			setModelColor(model, Color3.fromRGB(40, 80, 20))
+		end
+		if t > 0.75 then
+			setModelTransparency(model, (t - 0.75) / 0.25)
+		end
+	elseif kt == "flame" then
+		-- Jitter + scale shrink (faked via pivot offset)
+		local jitterX = (math.random() - 0.5) * 0.6
+		local jitterZ = (math.random() - 0.5) * 0.6
+		local jitterY = math.random() * 0.4
+		model:PivotTo(enemy.deathStartCF + Vector3.new(jitterX, jitterY, jitterZ))
+		-- Color cooler over time (orange → red → black)
+		local r = 255 - math.floor(t * 180)
+		local g = 120 - math.floor(t * 120)
+		setModelColor(model, Color3.fromRGB(math.max(r, 40), math.max(g, 0), 10))
+		setModelTransparency(model, t * 0.85)
+	else
+		-- Default: fade out
+		setModelTransparency(model, t)
+	end
+
+	if t >= 1 then
+		enemy.destroyed = true
+		model:Destroy()
+	end
+end
+
+function EnemyManager.damage(enemy: Enemy, amount: number, killerType: string?)
 	if not enemy.alive then
 		return
 	end
 
 	enemy.hp -= amount
 	if enemy.hp <= 0 then
-		enemy.alive = false
-		enemy.model:Destroy()
+		beginDeath(enemy, killerType or "basic")
 		return
 	end
 
@@ -567,13 +772,10 @@ function EnemyManager.damage(enemy: Enemy, amount: number)
 	local ratio = math.max(0, enemy.hp / enemy.maxHp)
 	enemy.hpFill.Size = UDim2.fromScale(ratio, 1)
 	if ratio > 0.5 then
-		-- Vibrant green
 		enemy.hpFill.BackgroundColor3 = Color3.fromRGB(60, 230, 80)
 	elseif ratio > 0.25 then
-		-- Bright amber
 		enemy.hpFill.BackgroundColor3 = Color3.fromRGB(255, 170, 30)
 	else
-		-- Vibrant red
 		enemy.hpFill.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
 	end
 end
@@ -605,8 +807,21 @@ function EnemyManager.getAll(): { Enemy }
 	return enemies
 end
 
+-- Per-type walk animation parameters — bigger numbers = more comedic bounce
+local WALK_PARAMS: { [string]: { bounce: number, wobble: number, freq: number } } = {
+	goblin = { bounce = 0.55, wobble = 0.10, freq = 4.0 },
+	scout = { bounce = 0.25, wobble = 0.05, freq = 6.5 },
+	troll = { bounce = 0.35, wobble = 0.06, freq = 2.2 },
+}
+
+local DEFAULT_WALK = WALK_PARAMS.goblin
+
 function EnemyManager.update(dt: number)
 	for _, enemy in enemies do
+		if enemy.dying and not enemy.destroyed then
+			updateDeath(enemy, dt)
+			continue
+		end
 		if not enemy.alive then
 			continue
 		end
@@ -619,10 +834,10 @@ function EnemyManager.update(dt: number)
 			end
 		end
 
-		-- Poison DoT
+		-- Poison DoT — killed by poison counts as a poison death
 		if enemy.poisonTimer > 0 then
 			enemy.poisonTimer -= dt
-			EnemyManager.damage(enemy, enemy.poisonDps * dt)
+			EnemyManager.damage(enemy, enemy.poisonDps * dt, "poison")
 			if not enemy.alive then
 				continue
 			end
@@ -639,28 +854,48 @@ function EnemyManager.update(dt: number)
 		local dist = toTarget.Magnitude
 		local step = enemy.speed * dt
 
+		-- Advance walk animation phase (scaled by current speed so slowed
+		-- enemies also bounce slower)
+		local walk = WALK_PARAMS[enemy.enemyType] or DEFAULT_WALK
+		enemy.walkPhase += dt * enemy.speed * 0.35
+		local p = enemy.walkPhase * walk.freq
+		local bounceY = math.abs(math.sin(p)) * walk.bounce
+		local wobbleZ = math.sin(p) * walk.wobble
+
+		local nextPos: Vector3
+		local nextDir: Vector3? = nil
 		if dist <= step then
 			enemy.waypointIndex += 1
 			if enemy.waypointIndex > #waypoints then
 				enemy.alive = false
 				enemy.reachedEnd = true
+				enemy.destroyed = true
 				enemy.model:Destroy()
 				continue
 			end
-			enemy.model:PivotTo(CFrame.new(target))
+			nextPos = Vector3.new(target.X, target.Y, target.Z)
 		else
 			local dir = toTarget.Unit
-			local newPos = currentPos + dir * step
-			-- Face direction of travel so multi-part models will look right later
-			enemy.model:PivotTo(CFrame.lookAt(newPos, newPos + dir))
+			nextPos = Vector3.new(currentPos.X, target.Y, currentPos.Z) + dir * step
+			nextDir = dir
 		end
+
+		local bouncedPos = nextPos + Vector3.new(0, bounceY, 0)
+		local baseCF: CFrame
+		if nextDir then
+			baseCF = CFrame.lookAt(bouncedPos, bouncedPos + nextDir)
+		else
+			baseCF = CFrame.new(bouncedPos)
+		end
+		enemy.model:PivotTo(baseCF * CFrame.Angles(0, 0, wobbleZ))
 	end
 end
 
--- Remove dead enemies from the list (call after damage/reward processing)
+-- Remove fully destroyed enemies from the list. Dying-but-still-animating
+-- enemies are kept so their animation can play out.
 function EnemyManager.cleanup()
 	for i = #enemies, 1, -1 do
-		if not enemies[i].alive then
+		if enemies[i].destroyed then
 			table.remove(enemies, i)
 		end
 	end
@@ -668,7 +903,7 @@ end
 
 function EnemyManager.clear()
 	for _, enemy in enemies do
-		if enemy.alive then
+		if enemy.model.Parent then
 			enemy.model:Destroy()
 		end
 	end

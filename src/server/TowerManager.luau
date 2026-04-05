@@ -639,11 +639,15 @@ local function updateProjectiles(dt: number)
 					local d = (enemy.root.Position - targetPos).Magnitude
 					if d <= def.splash then
 						local falloff = 1 - (d / def.splash) * 0.5
-						EnemyManager.damage(enemy, math.floor(def.damage * falloff))
+						EnemyManager.damage(
+							enemy,
+							math.floor(def.damage * falloff),
+							p.tower.towerType
+						)
 					end
 				end
 			else
-				EnemyManager.damage(p.target, def.damage)
+				EnemyManager.damage(p.target, def.damage, p.tower.towerType)
 			end
 
 			if def.slowFactor and p.target.alive then
