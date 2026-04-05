@@ -784,6 +784,16 @@ function Hud.revertPanelSelection()
 	updateSelectedInfo()
 end
 
+-- Used by the tutorial: clear the current selection so the player has to
+-- actually click a tower button before the "select a tower" step advances.
+function Hud.clearSelection()
+	selection.towerType = ""
+	selection.fromInventoryIndex = -1
+	updateTowerButtons()
+	updateInventory()
+	updateSelectedInfo()
+end
+
 function Hud.isGameOver(): boolean
 	return currentState.gameOver
 end
