@@ -71,8 +71,9 @@ Remotes.CastleDestroyed.OnClientEvent:Connect(function(castlePos)
 	local target = castlePos + Vector3.new(0, 9, 0)
 	Placement.cinematicPanTo(CFrame.lookAt(eye, target), 1.5)
 
+	-- Pan back to the player's character after a short hold
 	task.delay(2.7, function()
-		Placement.cinematicReturnToOverview(1.2)
+		Placement.cinematicReturnToCharacter(1.2)
 	end)
 end)
 

@@ -75,8 +75,6 @@ end
 -- --- State ---
 
 local screen: ScreenGui? = nil
-local highlightFrame: Frame? = nil
-local highlightStroke: UIStroke? = nil
 local tooltipIcon: TextLabel? = nil
 local tooltipText: TextLabel? = nil
 local counterLabel: TextLabel? = nil
@@ -116,38 +114,25 @@ local function buildOverlay()
 	screen.DisplayOrder = 50
 	screen.Parent = playerGui
 
-	-- Highlight lives INSIDE the Hud ScreenGui so AbsolutePosition of any
-	-- Hud element is in the same coordinate space as the highlight's
-	-- parent. This eliminates any cross-ScreenGui inset mismatch.
+	-- Big bouncing arrow pointer. Parented inside the Hud ScreenGui so
+	-- AbsolutePosition math is in the same coordinate space as the HUD
+	-- elements we're pointing at (avoids any cross-ScreenGui inset mismatch).
 	local hudScreen = Hud.getScreen() or screen
 
-	highlightFrame = Instance.new("Frame")
-	highlightFrame.Name = "TutorialHighlight"
-	highlightFrame.AnchorPoint = Vector2.new(0, 0)
-	highlightFrame.BackgroundColor3 = COLOR_HIGHLIGHT
-	highlightFrame.BackgroundTransparency = 0.78
-	highlightFrame.BorderSizePixel = 0
-	highlightFrame.Visible = false
-	highlightFrame.ZIndex = 500
-	highlightFrame.Parent = hudScreen
-	addCorner(highlightFrame, 14)
-	highlightStroke = addStroke(highlightFrame, COLOR_HIGHLIGHT, 6)
-
-	-- Bouncing arrow pointer
 	local pl = Instance.new("TextLabel")
-	pl.Name = "Pointer"
+	pl.Name = "TutorialPointer"
 	pl.AnchorPoint = Vector2.new(0, 0)
-	pl.Size = UDim2.fromOffset(80, 80)
+	pl.Size = UDim2.fromOffset(120, 120)
 	pl.BackgroundTransparency = 1
 	pl.Text = "⬇"
 	pl.Font = Enum.Font.GothamBlack
-	pl.TextSize = 60
+	pl.TextSize = 90
 	pl.TextColor3 = COLOR_HIGHLIGHT
 	pl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	pl.TextStrokeTransparency = 0
 	pl.Visible = false
-	pl.ZIndex = 11
-	pl.Parent = screen
+	pl.ZIndex = 500
+	pl.Parent = hudScreen
 	pointerLabel = pl
 
 	-- Compact tooltip (560x140) pinned top-center
@@ -241,33 +226,7 @@ local function buildOverlay()
 	end)
 end
 
--- --- Highlight + pointer updates ---
-
-local function updateHighlight(targetName: string?)
-	if not highlightFrame then
-		return
-	end
-	if not targetName then
-		highlightFrame.Visible = false
-		return
-	end
-	local target = Hud.getElement(targetName)
-	if not target or not target:IsA("GuiObject") then
-		highlightFrame.Visible = false
-		return
-	end
-	-- Skip the first frame until the target's layout has been computed
-	local absSize = target.AbsoluteSize
-	if absSize.X <= 0 or absSize.Y <= 0 then
-		highlightFrame.Visible = false
-		return
-	end
-	local pad = 14
-	local absPos = target.AbsolutePosition
-	highlightFrame.Position = UDim2.fromOffset(absPos.X - pad, absPos.Y - pad)
-	highlightFrame.Size = UDim2.fromOffset(absSize.X + pad * 2, absSize.Y + pad * 2)
-	highlightFrame.Visible = true
-end
+-- --- Pointer update ---
 
 local function updatePointer(targetName: string?)
 	if not pointerLabel then
@@ -361,7 +320,6 @@ local function showStep(index: number)
 		end
 	end
 
-	updateHighlight(step.target)
 	updatePointer(step.target)
 end
 
@@ -395,17 +353,9 @@ function Tutorial.start(onComplete: (() -> ())?)
 			return
 		end
 
-		-- Refresh highlight + pointer each frame so they track layout changes
+		-- Refresh the pointer each frame so it tracks layout changes
 		if step.target then
-			updateHighlight(step.target)
 			updatePointer(step.target)
-		end
-
-		-- Pulse the highlight stroke + glow for attention
-		if highlightStroke and highlightFrame then
-			local pulse = 0.5 + 0.5 * math.sin(os.clock() * 4.5)
-			highlightStroke.Thickness = 5 + 6 * pulse -- 5-11 px
-			highlightFrame.BackgroundTransparency = 0.85 - 0.15 * pulse -- 0.7-0.85
 		end
 
 		-- Auto-advance if the step's condition is met
@@ -420,17 +370,15 @@ function Tutorial.finish()
 		heartbeatConn:Disconnect()
 		heartbeatConn = nil
 	end
-	-- Highlight lives in the Hud screen, not the Tutorial screen, so
+	-- Pointer lives in the Hud screen, not the Tutorial screen, so
 	-- destroy it explicitly before tearing down the Tutorial screen.
-	if highlightFrame then
-		highlightFrame:Destroy()
+	if pointerLabel then
+		pointerLabel:Destroy()
 	end
 	if screen then
 		screen:Destroy()
 		screen = nil
 	end
-	highlightFrame = nil
-	highlightStroke = nil
 	tooltipIcon = nil
 	tooltipText = nil
 	counterLabel = nil

@@ -5,6 +5,7 @@
 -- straight down. Tab toggles to "explore" where the default Roblox follow
 -- camera and character take over so you can walk around.
 
+local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -190,23 +191,49 @@ function Placement.cinematicPanTo(cf: CFrame, duration: number)
 	lerpDuration = math.max(0, duration)
 end
 
--- Lerps back to the overview camera over `duration` seconds, then releases
--- the cinematic override so normal camera logic resumes.
-function Placement.cinematicReturnToOverview(duration: number)
+-- Lerps the camera toward a view of the player's character, then switches
+-- CameraType to Custom so Roblox's default follow-cam takes over. Used at
+-- the end of the castle-destroyed cinematic so the camera returns to the
+-- player instead of the top-down overview.
+function Placement.cinematicReturnToCharacter(duration: number)
+	local player = Players.LocalPlayer
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart") :: Part?
+	if not root then
+		-- No character yet; just release the cinematic and fall back to overview
+		cinematicCFrame = nil
+		lerpStartCFrame = nil
+		mode = "overview"
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
+		return
+	end
+
+	local charPos = root.Position
+	local eye = charPos + Vector3.new(-14, 10, -14)
+	local target = charPos + Vector3.new(0, 3, 0)
 	lerpStartCFrame = camera.CFrame
-	cinematicCFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
+	cinematicCFrame = CFrame.lookAt(eye, target)
 	lerpStartTime = os.clock()
 	lerpDuration = math.max(0.01, duration)
 	task.delay(duration, function()
 		cinematicCFrame = nil
 		lerpStartCFrame = nil
+		-- Hand control to Roblox's default follow camera so it tracks
+		-- the character going forward.
+		mode = "explore"
+		camera.CameraType = Enum.CameraType.Custom
 	end)
 end
 
--- Immediately drops out of cinematic mode (used on restart).
+-- Immediately drops out of cinematic mode and restores the overview
+-- camera (used on restart when a new game starts).
 function Placement.cinematicRelease()
 	cinematicCFrame = nil
 	lerpStartCFrame = nil
+	mode = "overview"
+	camera.CameraType = Enum.CameraType.Scriptable
+	camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
 end
 
 function Placement.init()
