@@ -417,27 +417,65 @@ function Map.build(): MapData
 		end
 	end
 
-	for i = 1, 680 do
+	-- WedgeParts give each ridge a flat triangular slope face instead of
+	-- the flat top a Block has, so the silhouette feels rocky rather than
+	-- column-like.
+	local function makeWedge(name: string): WedgePart
+		local w = Instance.new("WedgePart")
+		w.Name = name
+		w.Anchored = true
+		w.CanCollide = false
+		w.CastShadow = true
+		w.TopSurface = Enum.SurfaceType.Smooth
+		w.BottomSurface = Enum.SurfaceType.Smooth
+		w.Parent = ridges
+		return w
+	end
+
+	for i = 1, 700 do
 		local rx, rz, t = randomRidgePoint()
 
-		-- Height grows from ~6 at the inner edge to ~85 at the outer edge,
+		-- Height grows from ~6 at the inner edge to ~90 at the outer edge,
 		-- plus a big random jitter to create ridges and valleys.
-		local heightBase = 6 + t * 80
-		local heightJitter = vegRng:NextNumber() * 45
-		local height = heightBase + heightJitter -- range ~6 to ~130
+		local heightBase = 6 + t * 85
+		local heightJitter = vegRng:NextNumber() * 55
+		local height = heightBase + heightJitter -- range ~6 to ~145
 
-		local width = 4 + vegRng:NextNumber() * 9
-		local depth = 4 + vegRng:NextNumber() * 9
+		local width = 6 + vegRng:NextNumber() * 14
+		local depth = 6 + vegRng:NextNumber() * 14
 		local yaw = vegRng:NextNumber() * math.pi * 2
-		local tiltX = (vegRng:NextNumber() - 0.5) * 0.25
-		local tiltZ = (vegRng:NextNumber() - 0.5) * 0.25
+		local tiltX = (vegRng:NextNumber() - 0.5) * 0.35
+		local tiltZ = (vegRng:NextNumber() - 0.5) * 0.35
 
-		local pillar = makePart(ridges, "Ridge_" .. i)
-		pillar.Size = Vector3.new(width, height, depth)
-		pillar.CFrame = CFrame.new(rx, height / 2 - 2, rz) * CFrame.Angles(tiltX, yaw, tiltZ)
-		pillar.Color = RIDGE_COLORS[vegRng:NextInteger(1, #RIDGE_COLORS)]
-		pillar.Material = Enum.Material.Rock
-		pillar.CanCollide = false
+		local wedge = makeWedge("Ridge_" .. i)
+		wedge.Size = Vector3.new(width, height, depth)
+		wedge.CFrame = CFrame.new(rx, height / 2 - 2, rz) * CFrame.Angles(tiltX, yaw, tiltZ)
+		wedge.Color = RIDGE_COLORS[vegRng:NextInteger(1, #RIDGE_COLORS)]
+		wedge.Material = Enum.Material.Rock
+	end
+
+	-- A second pass of wedges flipped vertically so the slopes fan in
+	-- the opposite direction, filling valleys between the upward ones.
+	for i = 1, 300 do
+		local rx, rz, t = randomRidgePoint()
+
+		local heightBase = 10 + t * 60
+		local heightJitter = vegRng:NextNumber() * 40
+		local height = heightBase + heightJitter
+
+		local width = 6 + vegRng:NextNumber() * 14
+		local depth = 6 + vegRng:NextNumber() * 14
+		local yaw = vegRng:NextNumber() * math.pi * 2
+
+		local wedge = makeWedge("RidgeFlip_" .. i)
+		wedge.Size = Vector3.new(width, height, depth)
+		-- Rotate 180° around the X axis so the slope face points the
+		-- opposite way (pointy end at the bottom, flat top).
+		wedge.CFrame = CFrame.new(rx, height / 2 - 2, rz)
+			* CFrame.Angles(math.pi, 0, 0)
+			* CFrame.Angles(0, yaw, 0)
+		wedge.Color = RIDGE_COLORS[vegRng:NextInteger(1, #RIDGE_COLORS)]
+		wedge.Material = Enum.Material.Rock
 	end
 
 	-- --- Mountain range (outside the invisible walls) ---
