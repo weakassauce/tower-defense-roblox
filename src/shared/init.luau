@@ -10,5 +10,6 @@ Shared.TowerDefs = require(script.TowerDefs)
 Shared.WaveConfig = require(script.WaveConfig)
 Shared.RealmDefs = require(script.RealmDefs)
 Shared.Guns = require(script.Guns)
+Shared.GamePassConfig = require(script.GamePassConfig)
 
 return Shared

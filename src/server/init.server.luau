@@ -13,7 +13,10 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local TowerDefs = require(ReplicatedStorage.Shared.TowerDefs)
 local RealmDefs = require(ReplicatedStorage.Shared.RealmDefs)
 local Guns = require(ReplicatedStorage.Shared.Guns)
+local GamePassConfig = require(ReplicatedStorage.Shared.GamePassConfig)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Map = require(script.Map)
 local EnemyManager = require(script.EnemyManager)
@@ -218,9 +221,51 @@ local function resetGame()
 	broadcastState()
 end
 
+-- --- Premium tower (Game Pass) ownership ---
+-- Cached per player; refreshed on join and when a purchase finishes.
+local premiumOwners: { [Player]: boolean } = {}
+
+local function ownsPremiumTower(player: Player): boolean
+	if premiumOwners[player] ~= nil then
+		return premiumOwners[player]
+	end
+	local passId = GamePassConfig.PREMIUM_TOWER.id
+	-- In Studio or when the pass ID hasn't been configured yet, grant
+	-- access for free so the developer can still test the tower.
+	if passId == 0 or RunService:IsStudio() then
+		premiumOwners[player] = true
+		return true
+	end
+	local ok, result = pcall(function()
+		return MarketplaceService:UserOwnsGamePassAsync(player.UserId, passId)
+	end)
+	local owned = ok and result == true
+	premiumOwners[player] = owned
+	return owned
+end
+
+Players.PlayerAdded:Connect(function(player)
+	task.spawn(function()
+		ownsPremiumTower(player)
+	end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	premiumOwners[player] = nil
+end)
+
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, wasPurchased)
+	if passId == GamePassConfig.PREMIUM_TOWER.id and wasPurchased then
+		premiumOwners[player] = true
+		-- Tell the client to refresh its tower picker so the celestial
+		-- card swaps from "99 R$" to the normal affordable state.
+		Remotes.PremiumTowerUnlocked:FireClient(player)
+	end
+end)
+
 -- --- Remote handlers ---
 
-Remotes.PlaceTower.OnServerEvent:Connect(function(_player, gx, gy, towerType)
+Remotes.PlaceTower.OnServerEvent:Connect(function(player, gx, gy, towerType)
 	if typeof(gx) ~= "number" or typeof(gy) ~= "number" or typeof(towerType) ~= "string" then
 		return
 	end
@@ -233,6 +278,10 @@ Remotes.PlaceTower.OnServerEvent:Connect(function(_player, gx, gy, towerType)
 	end
 	local def = TowerDefs[towerType]
 	if not def then
+		return
+	end
+	-- Premium tower: require the 99 R$ game pass.
+	if towerType == GamePassConfig.PREMIUM_TOWER_KEY and not ownsPremiumTower(player) then
 		return
 	end
 	-- Gate the realm signature tower: a realm's signature tower can only

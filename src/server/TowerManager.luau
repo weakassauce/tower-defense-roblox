@@ -691,6 +691,122 @@ local function buildPlasma(model: Model, def: TowerDefs.TowerDef, pos: Vector3):
 	return core
 end
 
+local function buildCelestial(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	-- Premium 99 R$ tower. Layered gold plinth, tall crystal pillar
+	-- with inner glow, orbital rings, and a blazing starforge crown.
+	local cx, cz = pos.X, pos.Z
+	local gold = Color3.fromRGB(255, 215, 110)
+	local goldDark = Color3.fromRGB(180, 140, 45)
+	local ivory = Color3.fromRGB(255, 245, 220)
+
+	-- Three-tier plinth
+	makeCylinder(
+		model,
+		"PlinthBase",
+		8,
+		1.4,
+		CFrame.new(cx, 0.7, cz),
+		goldDark,
+		Enum.Material.Marble
+	)
+	makeCylinder(model, "PlinthMid", 6.5, 0.9, CFrame.new(cx, 1.85, cz), gold, Enum.Material.Marble)
+	makeCylinder(
+		model,
+		"PlinthTop",
+		5.2,
+		0.7,
+		CFrame.new(cx, 2.65, cz),
+		goldDark,
+		Enum.Material.Marble
+	)
+
+	-- Runic band around the plinth
+	for i = 0, 7 do
+		local angle = (i / 8) * math.pi * 2
+		local rx = cx + math.cos(angle) * 3
+		local rz = cz + math.sin(angle) * 3
+		local rune = makeBlock(
+			model,
+			"Rune" .. i,
+			Vector3.new(0.5, 0.6, 0.5),
+			CFrame.new(rx, 2.25, rz) * CFrame.Angles(0, angle, 0),
+			def.accent,
+			Enum.Material.Neon
+		)
+		rune.Transparency = 0.2
+	end
+
+	-- Central crystal pillar
+	local pillar = makeBlock(
+		model,
+		"Pillar",
+		Vector3.new(1.6, 10, 1.6),
+		CFrame.new(cx, 8, cz) * CFrame.Angles(0, math.rad(45), 0),
+		def.color,
+		Enum.Material.Glass
+	)
+	pillar.Transparency = 0.05
+	addPointLight(pillar, def.color, 20, 2.5)
+
+	-- Floating orbital rings around the pillar
+	for i = 1, 3 do
+		local y = 5 + (i - 1) * 2.5
+		local ring = makeCylinder(
+			model,
+			"Ring" .. i,
+			4.5 + (i - 1) * 0.5,
+			0.25,
+			CFrame.new(cx, y, cz) * CFrame.Angles(math.rad(15 * (i - 1)), 0, 0),
+			gold,
+			Enum.Material.Neon
+		)
+		ring.Transparency = 0.25
+	end
+
+	-- Six satellite orbs orbiting the pillar at mid-height
+	for i = 0, 5 do
+		local angle = (i / 6) * math.pi * 2
+		local ox = cx + math.cos(angle) * 3.2
+		local oz = cz + math.sin(angle) * 3.2
+		local orb = makeSphere(
+			model,
+			"Orb" .. i,
+			0.9,
+			Vector3.new(ox, 7.5, oz),
+			def.accent,
+			Enum.Material.Neon
+		)
+		addPointLight(orb, def.accent, 6, 1.2)
+	end
+
+	-- Starforge crown at the very top
+	local crown =
+		makeSphere(model, "Crown", 3.4, Vector3.new(cx, 14.2, cz), def.color, Enum.Material.Neon)
+	addPointLight(crown, def.color, 30, 5)
+
+	-- Six spike crests around the crown
+	for i = 0, 5 do
+		local angle = (i / 6) * math.pi * 2
+		local sx = cx + math.cos(angle) * 1.8
+		local sz = cz + math.sin(angle) * 1.8
+		local spike = makeBlock(
+			model,
+			"CrownSpike" .. i,
+			Vector3.new(0.4, 2.2, 0.4),
+			CFrame.new(sx, 15.6, sz)
+				* CFrame.Angles(math.rad(math.cos(angle) * 25), 0, math.rad(math.sin(angle) * 25)),
+			ivory,
+			Enum.Material.Neon
+		)
+		spike.Transparency = 0.1
+	end
+
+	-- Tiny finial at the very top
+	makeSphere(model, "Finial", 0.7, Vector3.new(cx, 17, cz), ivory, Enum.Material.Neon)
+
+	return crown
+end
+
 local TOWER_BUILDERS: { [string]: (Model, TowerDefs.TowerDef, Vector3) -> Part } = {
 	basic = buildArcher,
 	sniper = buildWizard,
@@ -704,6 +820,7 @@ local TOWER_BUILDERS: { [string]: (Model, TowerDefs.TowerDef, Vector3) -> Part }
 	sandstorm = buildSandstorm,
 	thornwall = buildThornwall,
 	plasma = buildPlasma,
+	celestial = buildCelestial,
 }
 
 local function buildTowerModel(

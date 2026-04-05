@@ -213,6 +213,28 @@ local TowerDefs: { [string]: TowerDef } = {
 		chain = 2,
 		chainRange = 3 * SCALE,
 	},
+
+	-- --- Premium tower (Game Pass gated) ---
+	-- Unlocked by purchasing the Celestial Bastion game pass (99 R$).
+	-- Every stat is tuned to be clearly stronger than any other tower
+	-- in the game, justifying the real-money price.
+	celestial = {
+		name = "Celestial Bastion",
+		icon = "🌟",
+		cost = 500,
+		range = 11 * SCALE,
+		damage = 85,
+		fireRate = 1.3,
+		color = Color3.fromRGB(255, 215, 110),
+		accent = Color3.fromRGB(255, 245, 200),
+		projectileSpeed = 95 * SCALE,
+		projectileColor = Color3.fromRGB(255, 236, 160),
+		splash = 2.6 * SCALE,
+		chain = 4,
+		chainRange = 5 * SCALE,
+		poisonDps = 12,
+		poisonDuration = 3,
+	},
 }
 
 return TowerDefs

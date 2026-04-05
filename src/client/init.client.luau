@@ -138,6 +138,18 @@ Remotes.GameOver.OnClientEvent:Connect(function()
 	Hud.showGameOver()
 end)
 
+-- Server tells us the 99 R$ game pass was just purchased; flip the
+-- cached ownership flag and re-push the current state so the tower
+-- picker instantly swaps from the locked Robux card to a normal
+-- buyable card.
+Remotes.PremiumTowerUnlocked.OnClientEvent:Connect(function()
+	Hud.markPremiumOwned()
+	local state = Hud.getState()
+	if state then
+		Hud.onStateUpdate(state)
+	end
+end)
+
 -- --- Gun effects ---
 -- Server fires GunFired whenever a gun shot resolves, giving us the
 -- muzzle origin, one hit point per pellet, the tracer color, and an

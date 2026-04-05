@@ -58,5 +58,6 @@ Remotes.GameOver = getOrMakeRemote("GameOver")
 Remotes.CastleDestroyed = getOrMakeRemote("CastleDestroyed")
 Remotes.EnterRealm = getOrMakeRemote("EnterRealm")
 Remotes.GunFired = getOrMakeRemote("GunFired")
+Remotes.PremiumTowerUnlocked = getOrMakeRemote("PremiumTowerUnlocked")
 
 return Remotes

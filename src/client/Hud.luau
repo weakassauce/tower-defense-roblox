@@ -21,6 +21,9 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local RealmDefs = require(ReplicatedStorage.Shared.RealmDefs)
 local Guns = require(ReplicatedStorage.Shared.Guns)
+local GamePassConfig = require(ReplicatedStorage.Shared.GamePassConfig)
+
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Hud = {}
 
@@ -35,8 +38,9 @@ local COLOR_GOLD_TEXT = Color3.fromRGB(255, 213, 79)
 local COLOR_DANGER = Color3.fromRGB(239, 83, 80)
 
 -- Display order for the tower panel: the 7 universal towers first, then
--- realm signature towers in RealmDefs.ORDER. Signature towers are hidden
--- by default and only shown by Hud.setRealmTowers().
+-- realm signature towers in RealmDefs.ORDER, and finally the premium
+-- game-pass tower. Signature towers are hidden by default and only
+-- shown by Hud.setRealmTowers().
 local TOWER_ORDER = {
 	"basic",
 	"sniper",
@@ -50,6 +54,7 @@ local TOWER_ORDER = {
 	"sandstorm",
 	"thornwall",
 	"plasma",
+	"celestial",
 }
 
 -- --- Client-side state ---
@@ -80,6 +85,35 @@ local onStartedCallback: (() -> ())? = nil
 local function scaledCost(baseCost: number): number
 	local realm = RealmDefs.get(currentState.realm or "defense")
 	return math.floor(baseCost * realm.costMultiplier)
+end
+
+-- Premium tower ownership is cached client-side so the tower picker
+-- can instantly show the right state (Robux price vs. normal gold
+-- price). Refreshed on first query and whenever PromptPurchaseFinished
+-- / PremiumTowerUnlocked fires.
+local premiumOwnedCached: boolean? = nil
+
+local function ownsPremiumTower(): boolean
+	if premiumOwnedCached ~= nil then
+		return premiumOwnedCached
+	end
+	local passId = GamePassConfig.PREMIUM_TOWER.id
+	-- Studio + unconfigured pass → auto-unlock so we can test locally.
+	if passId == 0 then
+		premiumOwnedCached = game:GetService("RunService"):IsStudio()
+		return premiumOwnedCached :: boolean
+	end
+	local ok, result = pcall(function()
+		return MarketplaceService:UserOwnsGamePassAsync(player.UserId, passId)
+	end)
+	premiumOwnedCached = ok and result == true
+	return premiumOwnedCached :: boolean
+end
+
+-- Called by init.client when PremiumTowerUnlocked fires (after a
+-- successful Robux purchase) so the HUD re-renders the card.
+function Hud.markPremiumOwned()
+	premiumOwnedCached = true
 end
 
 -- --- UI references ---
@@ -1040,17 +1074,42 @@ local function updateSelectedInfo()
 	selectedStats.Text = formatStats(def)
 end
 
+local COLOR_PREMIUM = Color3.fromRGB(255, 215, 100)
+
 local function updateTowerButtons()
+	local premiumKey = GamePassConfig.PREMIUM_TOWER_KEY
+	local hasPremium = ownsPremiumTower()
 	for towerType, btn in towerButtons do
 		local def = TowerDefs[towerType]
 		local cost = scaledCost(def.cost)
 		local canAfford = currentState.gold >= cost
 		local costLabel = towerCostLabels[towerType]
+		local stroke = towerStrokes[towerType]
+		local isSelected = (selection.fromInventoryIndex < 0 and selection.towerType == towerType)
+
+		-- Premium tower special case: if the player doesn't own the
+		-- game pass, the card shows a Robux price instead of the
+		-- normal gold cost and gets a gold highlight.
+		local isLockedPremium = (towerType == premiumKey) and not hasPremium
+		if isLockedPremium then
+			if costLabel then
+				costLabel.Text = GamePassConfig.PREMIUM_TOWER.price .. " R$"
+			end
+			btn.BackgroundColor3 = Color3.fromRGB(60, 45, 10)
+			btn.BackgroundTransparency = 0.1
+			stroke.Color = COLOR_PREMIUM
+			stroke.Thickness = 3
+			btn:FindFirstChild("Name").TextColor3 = COLOR_PREMIUM
+			btn:FindFirstChild("Icon").TextColor3 = COLOR_PREMIUM
+			if costLabel then
+				costLabel.TextColor3 = COLOR_PREMIUM
+			end
+			continue
+		end
+
 		if costLabel then
 			costLabel.Text = string.format("%dg", cost)
 		end
-		local stroke = towerStrokes[towerType]
-		local isSelected = (selection.fromInventoryIndex < 0 and selection.towerType == towerType)
 
 		if isSelected then
 			-- Swap colors so the selection is impossible to miss
@@ -1060,7 +1119,21 @@ local function updateTowerButtons()
 			stroke.Thickness = 4
 			btn:FindFirstChild("Name").TextColor3 = Color3.fromRGB(40, 25, 10)
 			btn:FindFirstChild("Icon").TextColor3 = Color3.fromRGB(40, 25, 10)
-			towerCostLabels[towerType].TextColor3 = Color3.fromRGB(80, 50, 10)
+			if costLabel then
+				costLabel.TextColor3 = Color3.fromRGB(80, 50, 10)
+			end
+		elseif towerType == premiumKey then
+			-- Owned premium: keep the gold color so it still reads as
+			-- special even when unselected.
+			btn.BackgroundColor3 = COLOR_BG_CARD
+			btn.BackgroundTransparency = canAfford and 0.2 or 0.5
+			stroke.Color = COLOR_PREMIUM
+			stroke.Thickness = 2
+			btn:FindFirstChild("Name").TextColor3 = COLOR_PREMIUM
+			btn:FindFirstChild("Icon").TextColor3 = COLOR_PREMIUM
+			if costLabel then
+				costLabel.TextColor3 = canAfford and COLOR_PREMIUM or COLOR_DANGER
+			end
 		else
 			btn.BackgroundColor3 = COLOR_BG_CARD
 			btn.BackgroundTransparency = canAfford and 0.25 or 0.55
@@ -1068,7 +1141,9 @@ local function updateTowerButtons()
 			stroke.Thickness = 1
 			btn:FindFirstChild("Name").TextColor3 = COLOR_TEXT
 			btn:FindFirstChild("Icon").TextColor3 = COLOR_TEXT
-			towerCostLabels[towerType].TextColor3 = canAfford and COLOR_GOLD_TEXT or COLOR_DANGER
+			if costLabel then
+				costLabel.TextColor3 = canAfford and COLOR_GOLD_TEXT or COLOR_DANGER
+			end
 		end
 	end
 end
@@ -1315,6 +1390,17 @@ local function fireSelectionChanged()
 end
 
 function Hud.selectTower(towerType: string)
+	-- Premium tower: if the player doesn't own the game pass yet,
+	-- clicking the card triggers the Robux purchase prompt instead of
+	-- selecting the tower.
+	if towerType == GamePassConfig.PREMIUM_TOWER_KEY and not ownsPremiumTower() then
+		local passId = GamePassConfig.PREMIUM_TOWER.id
+		if passId ~= 0 then
+			MarketplaceService:PromptGamePassPurchase(player, passId)
+		end
+		return
+	end
+
 	-- Click the already-selected panel button again → deselect
 	if selection.fromInventoryIndex < 0 and selection.towerType == towerType then
 		selection.towerType = ""

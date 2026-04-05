@@ -605,9 +605,11 @@ end
 RealmDefsModule.ORDER = { "defense", "frost", "desert", "forest", "space" }
 
 -- The seven universal towers that exist in every realm, plus the realm's
--- signature tower, together form the tower picker for that realm.
+-- signature tower, together form the tower picker for that realm. The
+-- "celestial" entry is a premium game-pass tower that appears in every
+-- realm's picker but is only placeable if the player owns the pass.
 RealmDefsModule.UNIVERSAL_TOWERS =
-	{ "basic", "sniper", "cannon", "freeze", "lightning", "poison", "flame" }
+	{ "basic", "sniper", "cannon", "freeze", "lightning", "poison", "flame", "celestial" }
 
 function RealmDefsModule.getTowerList(realmName: string): { string }
 	local def = RealmDefsModule.get(realmName)
