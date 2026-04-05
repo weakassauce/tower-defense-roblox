@@ -23,7 +23,8 @@ type Mode = "overview" | "explore"
 
 local camera = workspace.CurrentCamera
 
-local mode: Mode = "overview"
+-- Players spawn in the lobby, so start in character-follow (explore) mode
+local mode: Mode = "explore"
 local enabled = false
 
 -- When set, the RenderStepped loop uses this CFrame every frame instead of
@@ -258,9 +259,11 @@ end
 function Placement.init()
 	buildPreview()
 	hidePreview()
-	applyOverviewCamera()
+	-- Start in character follow so players see their avatar in the lobby.
+	-- enterArenaMode() swaps to overview when a realm portal is touched.
+	applyExploreCamera()
 
-	-- Tab toggle (sink the input so the default behavior doesn't steal it)
+	-- Camera toggle on C (was Tab, which fights with the CoreGui leaderboard)
 	ContextActionService:BindAction("ToggleCameraMode", function(_action, inputState)
 		if inputState ~= Enum.UserInputState.Begin then
 			return Enum.ContextActionResult.Pass
@@ -273,7 +276,7 @@ function Placement.init()
 			applyOverviewCamera()
 		end
 		return Enum.ContextActionResult.Sink
-	end, false, Enum.KeyCode.Tab)
+	end, false, Enum.KeyCode.C)
 
 	-- Keep the scripted camera pinned each frame + update hover preview
 	RunService.RenderStepped:Connect(function()

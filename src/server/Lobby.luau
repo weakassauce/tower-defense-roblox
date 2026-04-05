@@ -15,7 +15,6 @@ export type LobbyData = {
 }
 
 local LOBBY_CENTER = Vector3.new(0, 500, 500)
-local PLATFORM_SIZE = Vector3.new(100, 2, 100)
 local SPAWN_OFFSET = Vector3.new(0, 2, 18)
 local PORTAL_ROW_Z_OFFSET = -32
 local PORTAL_SPACING = 22
@@ -235,86 +234,211 @@ function Lobby.build(arenaSpawnCFrame: CFrame, onEnterArena: (Player) -> ()): Lo
 	local cy = LOBBY_CENTER.Y
 	local cz = LOBBY_CENTER.Z
 
-	-- --- Main platform ---
-	makePart(folder, "Platform", {
-		Size = PLATFORM_SIZE,
-		Position = Vector3.new(cx, cy - 1, cz),
-		Color = Color3.fromRGB(95, 90, 82),
-		Material = Enum.Material.Slate,
-	})
+	local rng = Random.new(42)
 
-	-- Outer trim
-	makePart(folder, "TrimN", {
-		Size = Vector3.new(PLATFORM_SIZE.X, 1.2, 2),
-		Position = Vector3.new(cx, cy + 0.1, cz - PLATFORM_SIZE.Z / 2 + 1),
-		Color = Color3.fromRGB(60, 55, 48),
-		Material = Enum.Material.Slate,
+	-- --- Round grass island ---
+	-- Main disc (Cylinder shape, rotated flat)
+	local island = makePart(folder, "Island", {
+		Size = Vector3.new(3, 110, 110),
+		Position = Vector3.new(cx, cy - 1.5, cz),
+		Color = Color3.fromRGB(60, 130, 50),
+		Material = Enum.Material.Grass,
 	})
-	makePart(folder, "TrimS", {
-		Size = Vector3.new(PLATFORM_SIZE.X, 1.2, 2),
-		Position = Vector3.new(cx, cy + 0.1, cz + PLATFORM_SIZE.Z / 2 - 1),
-		Color = Color3.fromRGB(60, 55, 48),
-		Material = Enum.Material.Slate,
-	})
-	makePart(folder, "TrimE", {
-		Size = Vector3.new(2, 1.2, PLATFORM_SIZE.Z),
-		Position = Vector3.new(cx + PLATFORM_SIZE.X / 2 - 1, cy + 0.1, cz),
-		Color = Color3.fromRGB(60, 55, 48),
-		Material = Enum.Material.Slate,
-	})
-	makePart(folder, "TrimW", {
-		Size = Vector3.new(2, 1.2, PLATFORM_SIZE.Z),
-		Position = Vector3.new(cx - PLATFORM_SIZE.X / 2 + 1, cy + 0.1, cz),
-		Color = Color3.fromRGB(60, 55, 48),
-		Material = Enum.Material.Slate,
-	})
+	island.Shape = Enum.PartType.Cylinder
+	island.Orientation = Vector3.new(0, 0, 90)
 
-	-- Corner pillars with torch fires on top
-	local cornerXs = { -1, 1 }
-	local cornerZs = { -1, 1 }
-	for _, sx in cornerXs do
-		for _, sz in cornerZs do
-			local px = cx + sx * (PLATFORM_SIZE.X / 2 - 4)
-			local pz = cz + sz * (PLATFORM_SIZE.Z / 2 - 4)
-			makePart(folder, "CornerPillar", {
-				Size = Vector3.new(3, 14, 3),
-				Position = Vector3.new(px, cy + 6, pz),
-				Color = Color3.fromRGB(120, 115, 105),
-				Material = Enum.Material.Slate,
-			})
-			makePart(folder, "TorchBasin", {
-				Size = Vector3.new(2.2, 0.6, 2.2),
-				Position = Vector3.new(px, cy + 13.3, pz),
-				Color = Color3.fromRGB(45, 40, 35),
-				Material = Enum.Material.Metal,
-			})
-			local flame = makePart(folder, "TorchFlame", {
-				Size = Vector3.new(1.4, 1.8, 1.4),
-				Position = Vector3.new(px, cy + 14.5, pz),
-				Color = Color3.fromRGB(255, 150, 60),
-				Material = Enum.Material.Neon,
-				CanCollide = false,
-			})
-			flame.Shape = Enum.PartType.Ball
-			local torchLight = Instance.new("PointLight")
-			torchLight.Color = Color3.fromRGB(255, 170, 90)
-			torchLight.Range = 22
-			torchLight.Brightness = 1.8
-			torchLight.Parent = flame
-		end
+	-- Dirt underside that pokes out below the grass for a layered look
+	local dirt = makePart(folder, "Dirt", {
+		Size = Vector3.new(5, 115, 115),
+		Position = Vector3.new(cx, cy - 4, cz),
+		Color = Color3.fromRGB(84, 58, 40),
+		Material = Enum.Material.Ground,
+	})
+	dirt.Shape = Enum.PartType.Cylinder
+	dirt.Orientation = Vector3.new(0, 0, 90)
+
+	-- Smaller rough grass patches on top for variation
+	local grassTones = {
+		Color3.fromRGB(73, 150, 60),
+		Color3.fromRGB(55, 120, 45),
+		Color3.fromRGB(82, 160, 65),
+	}
+	for i = 1, 22 do
+		local angle = rng:NextNumber() * math.pi * 2
+		local r = rng:NextNumber() * 46
+		local px = cx + math.cos(angle) * r
+		local pz = cz + math.sin(angle) * r
+		local patch = makePart(folder, "GrassPatch_" .. i, {
+			Size = Vector3.new(rng:NextNumber(4, 9), 0.3, rng:NextNumber(4, 9)),
+			Position = Vector3.new(px, cy + 0.05, pz),
+			Color = grassTones[rng:NextInteger(1, #grassTones)],
+			Material = Enum.Material.Grass,
+			CanCollide = false,
+		})
+		patch.Orientation = Vector3.new(0, rng:NextNumber() * 360, 0)
 	end
 
-	-- Decorative central rune circle
-	local rune = makePart(folder, "RuneCircle", {
-		Size = Vector3.new(16, 0.2, 16),
-		Position = Vector3.new(cx, cy + 0.1, cz),
-		Color = Color3.fromRGB(232, 194, 143),
+	-- --- Natural boulders around the edge ---
+	local rockColors = {
+		Color3.fromRGB(118, 112, 100),
+		Color3.fromRGB(96, 90, 80),
+		Color3.fromRGB(135, 128, 115),
+	}
+	for i = 1, 14 do
+		local angle = (i / 14) * math.pi * 2 + rng:NextNumber() * 0.2
+		local r = 44 + rng:NextNumber() * 6
+		local bx = cx + math.cos(angle) * r
+		local bz = cz + math.sin(angle) * r
+		local sx = rng:NextNumber(3, 7)
+		local sy = rng:NextNumber(2.5, 5)
+		local sz = rng:NextNumber(3, 7)
+		local rock = makePart(folder, "Boulder_" .. i, {
+			Size = Vector3.new(sx, sy, sz),
+			Position = Vector3.new(bx, cy + sy / 2 - 0.3, bz),
+			Color = rockColors[rng:NextInteger(1, #rockColors)],
+			Material = Enum.Material.Rock,
+		})
+		rock.Orientation =
+			Vector3.new(rng:NextNumber(-15, 15), rng:NextNumber(0, 360), rng:NextNumber(-15, 15))
+	end
+
+	-- --- Trees scattered around the platform edges ---
+	local trunkColor = Color3.fromRGB(88, 54, 32)
+	local canopyColors = {
+		Color3.fromRGB(34, 110, 40),
+		Color3.fromRGB(52, 140, 50),
+		Color3.fromRGB(24, 95, 32),
+	}
+	for i = 1, 18 do
+		-- Reject positions near the portal row so they don't clip
+		local angle, r, tx, tz
+		repeat
+			angle = rng:NextNumber() * math.pi * 2
+			r = rng:NextNumber(30, 48)
+			tx = cx + math.cos(angle) * r
+			tz = cz + math.sin(angle) * r
+		until not (tz < cz + PORTAL_ROW_Z_OFFSET + 14 and math.abs(tx - cx) < 55)
+
+		local height = rng:NextNumber(8, 14)
+		local trunkThickness = rng:NextNumber(1.2, 1.8)
+		makePart(folder, "TreeTrunk_" .. i, {
+			Size = Vector3.new(trunkThickness, height, trunkThickness),
+			Position = Vector3.new(tx, cy + height / 2, tz),
+			Color = trunkColor,
+			Material = Enum.Material.Wood,
+		})
+		local canopySize = rng:NextNumber(6, 9)
+		local canopy = makePart(folder, "TreeCanopy_" .. i, {
+			Size = Vector3.new(canopySize, canopySize, canopySize),
+			Position = Vector3.new(tx, cy + height + canopySize / 2 - 1.5, tz),
+			Color = canopyColors[rng:NextInteger(1, #canopyColors)],
+			Material = Enum.Material.Grass,
+			CanCollide = false,
+		})
+		canopy.Shape = Enum.PartType.Ball
+	end
+
+	-- --- Central campfire (logs + flame) ---
+	-- Ring of stones around the fire pit
+	for i = 1, 8 do
+		local angle = (i / 8) * math.pi * 2
+		local sx = cx + math.cos(angle) * 3
+		local sz = cz + math.sin(angle) * 3
+		makePart(folder, "FireStone_" .. i, {
+			Size = Vector3.new(1.4, 1, 1.4),
+			Position = Vector3.new(sx, cy + 0.5, sz),
+			Color = Color3.fromRGB(96, 90, 80),
+			Material = Enum.Material.Rock,
+		})
+	end
+	-- Crossed logs
+	local log1 = makePart(folder, "FireLog1", {
+		Size = Vector3.new(5, 0.8, 0.8),
+		Position = Vector3.new(cx, cy + 1.1, cz),
+		Color = Color3.fromRGB(70, 44, 26),
+		Material = Enum.Material.Wood,
+	})
+	log1.Orientation = Vector3.new(0, 25, 0)
+	local log2 = makePart(folder, "FireLog2", {
+		Size = Vector3.new(5, 0.8, 0.8),
+		Position = Vector3.new(cx, cy + 1.1, cz),
+		Color = Color3.fromRGB(56, 34, 20),
+		Material = Enum.Material.Wood,
+	})
+	log2.Orientation = Vector3.new(0, -30, 0)
+	-- Flame ball with a warm point light
+	local flame = makePart(folder, "Flame", {
+		Size = Vector3.new(2.4, 2.8, 2.4),
+		Position = Vector3.new(cx, cy + 2.8, cz),
+		Color = Color3.fromRGB(255, 150, 50),
 		Material = Enum.Material.Neon,
-		Transparency = 0.55,
 		CanCollide = false,
 	})
-	rune.Shape = Enum.PartType.Cylinder
-	rune.Orientation = Vector3.new(0, 0, 90)
+	flame.Shape = Enum.PartType.Ball
+	local fireLight = Instance.new("PointLight")
+	fireLight.Color = Color3.fromRGB(255, 170, 90)
+	fireLight.Range = 28
+	fireLight.Brightness = 2.5
+	fireLight.Parent = flame
+
+	-- --- Flower patches for color ---
+	local flowerColors = {
+		Color3.fromRGB(255, 210, 80),
+		Color3.fromRGB(235, 80, 100),
+		Color3.fromRGB(180, 100, 230),
+		Color3.fromRGB(255, 255, 255),
+	}
+	for i = 1, 40 do
+		local angle = rng:NextNumber() * math.pi * 2
+		local r = rng:NextNumber(6, 42)
+		local fx = cx + math.cos(angle) * r
+		local fz = cz + math.sin(angle) * r
+		-- Skip near the campfire and the portal row
+		if (fx - cx) ^ 2 + (fz - cz) ^ 2 < 36 then
+			continue
+		end
+		if fz < cz + PORTAL_ROW_Z_OFFSET + 10 and math.abs(fx - cx) < 50 then
+			continue
+		end
+		local flower = makePart(folder, "Flower_" .. i, {
+			Size = Vector3.new(0.5, 0.6, 0.5),
+			Position = Vector3.new(fx, cy + 0.35, fz),
+			Color = flowerColors[rng:NextInteger(1, #flowerColors)],
+			Material = Enum.Material.Neon,
+			CanCollide = false,
+		})
+		flower.Shape = Enum.PartType.Ball
+	end
+
+	-- --- Small pond ---
+	local pondX = cx - 22
+	local pondZ = cz + 18
+	local pond = makePart(folder, "Pond", {
+		Size = Vector3.new(1, 14, 10),
+		Position = Vector3.new(pondX, cy - 0.2, pondZ),
+		Color = Color3.fromRGB(60, 140, 200),
+		Material = Enum.Material.Water,
+		Transparency = 0.25,
+		CanCollide = false,
+	})
+	pond.Shape = Enum.PartType.Cylinder
+	pond.Orientation = Vector3.new(0, 0, 90)
+	-- Mossy stones around the pond
+	for i = 1, 6 do
+		local angle = (i / 6) * math.pi * 2
+		local sx = pondX + math.cos(angle) * 7
+		local sz = pondZ + math.sin(angle) * 5
+		makePart(folder, "PondRock_" .. i, {
+			Size = Vector3.new(
+				rng:NextNumber(1.6, 2.6),
+				rng:NextNumber(1, 1.8),
+				rng:NextNumber(1.6, 2.6)
+			),
+			Position = Vector3.new(sx, cy + 0.4, sz),
+			Color = Color3.fromRGB(80, 110, 60),
+			Material = Enum.Material.Rock,
+		})
+	end
 
 	-- --- Portals along the north edge ---
 	local portalBaseZ = cz + PORTAL_ROW_Z_OFFSET
@@ -324,7 +448,6 @@ function Lobby.build(arenaSpawnCFrame: CFrame, onEnterArena: (Player) -> ()): Lo
 	for i, theme in THEMES do
 		local portalCenter = Vector3.new(firstX + (i - 1) * PORTAL_SPACING, cy, portalBaseZ)
 		buildPortal(folder, theme, portalCenter, function(player)
-			-- Teleport the player's character to the arena
 			local char = player.Character
 			if char then
 				char:PivotTo(arenaSpawnCFrame)
@@ -333,27 +456,34 @@ function Lobby.build(arenaSpawnCFrame: CFrame, onEnterArena: (Player) -> ()): Lo
 		end)
 	end
 
-	-- --- Welcome sign behind the spawn ---
-	local welcomeBeam = makePart(folder, "WelcomeBeam", {
-		Size = Vector3.new(40, 2, 2),
-		Position = Vector3.new(cx, cy + 11, cz + PLATFORM_SIZE.Z / 2 - 4),
-		Color = Color3.fromRGB(80, 60, 40),
+	-- --- Wooden welcome signpost behind the spawn ---
+	local signPostZ = cz + 32
+	makePart(folder, "SignPost", {
+		Size = Vector3.new(0.8, 10, 0.8),
+		Position = Vector3.new(cx, cy + 4.5, signPostZ),
+		Color = Color3.fromRGB(88, 54, 32),
+		Material = Enum.Material.Wood,
+	})
+	local signBoard = makePart(folder, "SignBoard", {
+		Size = Vector3.new(14, 4, 0.6),
+		Position = Vector3.new(cx, cy + 10, signPostZ),
+		Color = Color3.fromRGB(120, 80, 46),
 		Material = Enum.Material.Wood,
 	})
 	local welcomeBillboard = Instance.new("BillboardGui")
 	welcomeBillboard.Size = UDim2.fromOffset(480, 80)
-	welcomeBillboard.StudsOffset = Vector3.new(0, 4, 0)
+	welcomeBillboard.StudsOffset = Vector3.new(0, 0, 0)
 	welcomeBillboard.LightInfluence = 0
-	welcomeBillboard.Adornee = welcomeBeam
-	welcomeBillboard.Parent = welcomeBeam
+	welcomeBillboard.Adornee = signBoard
+	welcomeBillboard.Parent = signBoard
 
 	local welcomeLabel = Instance.new("TextLabel")
 	welcomeLabel.Size = UDim2.fromScale(1, 0.6)
 	welcomeLabel.BackgroundTransparency = 1
 	welcomeLabel.Text = "CHOOSE YOUR REALM"
 	welcomeLabel.Font = Enum.Font.GothamBlack
-	welcomeLabel.TextSize = 38
-	welcomeLabel.TextColor3 = Color3.fromRGB(232, 194, 143)
+	welcomeLabel.TextSize = 34
+	welcomeLabel.TextColor3 = Color3.fromRGB(255, 240, 200)
 	welcomeLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	welcomeLabel.TextStrokeTransparency = 0
 	welcomeLabel.Parent = welcomeBillboard
@@ -364,13 +494,13 @@ function Lobby.build(arenaSpawnCFrame: CFrame, onEnterArena: (Player) -> ()): Lo
 	welcomeSub.BackgroundTransparency = 1
 	welcomeSub.Text = "Walk into a portal to begin"
 	welcomeSub.Font = Enum.Font.GothamMedium
-	welcomeSub.TextSize = 18
-	welcomeSub.TextColor3 = Color3.fromRGB(200, 180, 140)
+	welcomeSub.TextSize = 17
+	welcomeSub.TextColor3 = Color3.fromRGB(230, 210, 170)
 	welcomeSub.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	welcomeSub.TextStrokeTransparency = 0
 	welcomeSub.Parent = welcomeBillboard
 
-	local spawnCFrame = CFrame.new(LOBBY_CENTER + SPAWN_OFFSET)
+	local spawnCFrame = CFrame.new(LOBBY_CENTER + SPAWN_OFFSET) * CFrame.Angles(0, math.pi, 0) -- face the portals
 	return {
 		folder = folder,
 		spawnCFrame = spawnCFrame,

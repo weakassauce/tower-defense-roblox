@@ -436,7 +436,7 @@ local function buildControlsHint(parent: Instance)
 	text.TextWrapped = true
 	text.TextXAlignment = Enum.TextXAlignment.Left
 	text.TextYAlignment = Enum.TextYAlignment.Center
-	text.Text = "<b>L-click</b> Place  ·  <b>R-click</b> Pick up  ·  <b>Tab</b> Explore/Overview"
+	text.Text = "<b>L-click</b> Place  ·  <b>R-click</b> Pick up  ·  <b>C</b> Explore/Overview"
 end
 
 -- --- Section: home screen ---
@@ -491,7 +491,7 @@ local function buildHomeScreen(parent: Instance)
 	local hint = makeTextLabel(
 		card,
 		"Hint",
-		"<b>L-click</b> Place tower  ·  <b>R-click</b> Pick up  ·  <b>Tab</b> Switch to explore mode",
+		"<b>L-click</b> Place tower  ·  <b>R-click</b> Pick up  ·  <b>C</b> Switch view",
 		14
 	)
 	hint.Font = Enum.Font.GothamMedium
