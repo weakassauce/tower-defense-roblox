@@ -288,10 +288,109 @@ local function spawnExplosion(pos: Vector3)
 	end)
 end
 
+-- Brief flame/ember burst at the gun muzzle whenever a shot fires.
+-- The flash is a bright neon core + a spray of small flame balls flung
+-- outward in a narrow cone along the aim direction.
+local function spawnMuzzleFlash(origin: Vector3, aimDir: Vector3)
+	-- Bright neon core flash
+	local flash = Instance.new("Part")
+	flash.Name = "MuzzleFlash"
+	flash.Shape = Enum.PartType.Ball
+	flash.Size = Vector3.new(1.1, 1.1, 1.1)
+	flash.Anchored = true
+	flash.CanCollide = false
+	flash.CanQuery = false
+	flash.CanTouch = false
+	flash.CastShadow = false
+	flash.Material = Enum.Material.Neon
+	flash.Color = Color3.fromRGB(255, 220, 120)
+	flash.Position = origin
+	flash.Parent = workspace
+
+	local light = Instance.new("PointLight")
+	light.Color = Color3.fromRGB(255, 180, 80)
+	light.Range = 12
+	light.Brightness = 4
+	light.Parent = flash
+
+	task.spawn(function()
+		local startSize = flash.Size
+		local steps = 8
+		for frame = 1, steps do
+			local t = frame / steps
+			flash.Size = startSize * (1 + t * 1.4)
+			flash.Transparency = t
+			light.Brightness = 4 * (1 - t)
+			task.wait()
+		end
+		flash:Destroy()
+	end)
+
+	-- Flame particles: small neon balls flung forward in a narrow cone,
+	-- fading from yellow → orange → red → dark as they expand and move.
+	for i = 1, 8 do
+		local spreadRad = 0.35
+		local jitter = Vector3.new(
+			(math.random() - 0.5) * spreadRad,
+			(math.random() - 0.5) * spreadRad,
+			(math.random() - 0.5) * spreadRad
+		)
+		local dir = (aimDir + jitter).Unit
+		local particle = Instance.new("Part")
+		particle.Name = "FlameParticle_" .. i
+		particle.Shape = Enum.PartType.Ball
+		local s = 0.35 + math.random() * 0.35
+		particle.Size = Vector3.new(s, s, s)
+		particle.Anchored = true
+		particle.CanCollide = false
+		particle.CanQuery = false
+		particle.CanTouch = false
+		particle.CastShadow = false
+		particle.Material = Enum.Material.Neon
+		particle.Color = Color3.fromRGB(255, 200 + math.random(0, 55), 60 + math.random(0, 60))
+		particle.Position = origin + dir * 0.3
+		particle.Parent = workspace
+
+		task.spawn(function()
+			local startSize = particle.Size
+			local startPos = particle.Position
+			local speed = 18 + math.random() * 12
+			local steps = 10 + math.random(0, 4)
+			for frame = 1, steps do
+				local t = frame / steps
+				particle.Position = startPos + dir * (speed * t * 0.03)
+				particle.Size = startSize * (1 + t * 0.8)
+				particle.Transparency = t
+				-- cool from bright yellow → deep red → near-black
+				local r = math.clamp(255 - math.floor(t * 60), 60, 255)
+				local g = math.clamp(200 - math.floor(t * 200), 0, 255)
+				local b = math.clamp(60 - math.floor(t * 60), 0, 255)
+				particle.Color = Color3.fromRGB(r, g, b)
+				task.wait()
+			end
+			particle:Destroy()
+		end)
+	end
+end
+
 Remotes.GunFired.OnClientEvent:Connect(function(origin, hits, _color, killedAt)
 	if typeof(origin) ~= "Vector3" or typeof(hits) ~= "table" then
 		return
 	end
+	-- Pick the first hit to derive an aim direction for the muzzle
+	-- flash cone. Fall back to world forward if somehow nothing was
+	-- in the hit list.
+	local aimDir = Vector3.new(0, 0, -1)
+	for _, hitPos in hits do
+		if typeof(hitPos) == "Vector3" then
+			local delta = hitPos - origin
+			if delta.Magnitude > 0.01 then
+				aimDir = delta.Unit
+				break
+			end
+		end
+	end
+	spawnMuzzleFlash(origin, aimDir)
 	for _, hitPos in hits do
 		if typeof(hitPos) == "Vector3" then
 			spawnSmokeTrail(origin, hitPos)

@@ -857,25 +857,20 @@ local function updateProjectiles(dt: number)
 			-- Hit
 			local def = p.tower.def
 
-			-- Cannon tower kills now play the gentler "basic" flop
-			-- death animation; the physics-explosion death is reserved
-			-- for gun kills (fired by the player), which pass the
-			-- "cannon" killer type explicitly from the FireGun handler.
-			local killerType = p.tower.towerType
-			if killerType == "cannon" then
-				killerType = "basic"
-			end
-
 			if def.splash > 0 then
 				for _, enemy in EnemyManager.getAlive() do
 					local d = (enemy.root.Position - targetPos).Magnitude
 					if d <= def.splash then
 						local falloff = 1 - (d / def.splash) * 0.5
-						EnemyManager.damage(enemy, math.floor(def.damage * falloff), killerType)
+						EnemyManager.damage(
+							enemy,
+							math.floor(def.damage * falloff),
+							p.tower.towerType
+						)
 					end
 				end
 			else
-				EnemyManager.damage(p.target, def.damage, killerType)
+				EnemyManager.damage(p.target, def.damage, p.tower.towerType)
 			end
 
 			if def.slowFactor and p.target.alive then
