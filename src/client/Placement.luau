@@ -5,7 +5,6 @@
 -- straight down. Tab toggles to "explore" where the default Roblox follow
 -- camera and character take over so you can walk around.
 
-local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -21,7 +20,6 @@ local Placement = {}
 
 type Mode = "overview" | "explore"
 
-local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
 local mode: Mode = "overview"
@@ -51,27 +49,13 @@ local function ensureWorkspaceFolders()
 	end
 end
 
-local function setCharacterFrozen(frozen: boolean)
-	local character = player.Character
-	if not character then
-		return
-	end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.WalkSpeed = frozen and 0 or 16
-		humanoid.JumpPower = frozen and 0 or 50
-	end
-end
-
 local function applyOverviewCamera()
 	camera.CameraType = Enum.CameraType.Scriptable
 	camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
-	setCharacterFrozen(true)
 end
 
 local function applyExploreCamera()
 	camera.CameraType = Enum.CameraType.Custom
-	setCharacterFrozen(false)
 end
 
 local function getCellUnderMouse(): (number?, number?, Vector3?)
@@ -193,12 +177,6 @@ function Placement.init()
 	buildPreview()
 	hidePreview()
 	applyOverviewCamera()
-
-	-- Re-freeze the character every time it respawns
-	player.CharacterAdded:Connect(function()
-		task.wait(0.1)
-		setCharacterFrozen(mode == "overview")
-	end)
 
 	-- Tab toggle (sink the input so the default behavior doesn't steal it)
 	ContextActionService:BindAction("ToggleCameraMode", function(_action, inputState)

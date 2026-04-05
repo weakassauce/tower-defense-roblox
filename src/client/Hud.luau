@@ -465,9 +465,11 @@ end
 local function updateInventory()
 	inventoryCountLabel.Text = tostring(#currentState.inventory)
 
-	-- Clear existing slots
+	-- Clear every GuiObject child (Frames, TextButtons, and — crucially —
+	-- any leftover "empty" TextLabel). UIListLayout is a UIBase, not a
+	-- GuiObject, so it is preserved.
 	for _, child in inventoryList:GetChildren() do
-		if child:IsA("Frame") or child:IsA("TextButton") then
+		if child:IsA("GuiObject") then
 			child:Destroy()
 		end
 	end
