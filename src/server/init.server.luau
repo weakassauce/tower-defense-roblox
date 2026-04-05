@@ -19,6 +19,7 @@ local GameState = require(script.GameState)
 local WaveController = require(script.WaveController)
 local LightingSetup = require(script.LightingSetup)
 local Castle = require(script.Castle)
+local Lobby = require(script.Lobby)
 
 print("[TowerDefense] Server booting")
 
@@ -31,11 +32,11 @@ for _, child in workspace:GetChildren() do
 	end
 end
 
--- Custom invisible spawn at the map center so players land on the grass
+-- SpawnLocation is placed inside the lobby (built below) so players land
+-- in the realm selection area instead of the arena.
 local spawn = Instance.new("SpawnLocation")
 spawn.Name = "TDSpawn"
-spawn.Size = Vector3.new(4, 0.4, 4)
-spawn.Position = Vector3.new(0, 1.2, 0)
+spawn.Size = Vector3.new(6, 0.4, 6)
 spawn.Anchored = true
 spawn.CanCollide = true
 spawn.Transparency = 1
@@ -58,6 +59,15 @@ end
 EnemyManager.init(mapData.waypoints)
 TowerManager.init()
 Castle.updateHp(GameState.get().hp, Config.STARTING_HP)
+
+-- Build the lobby and position the spawn inside it so players land in
+-- the realm selection area. The Realm Defense portal teleports the
+-- player into the arena via the onEnterArena callback.
+local arenaCharacterSpawn = CFrame.new(Vector3.new(0, 5, 0))
+local lobbyData = Lobby.build(arenaCharacterSpawn, function(player)
+	Remotes.EnterRealm:FireClient(player, "defense")
+end)
+spawn.CFrame = lobbyData.spawnCFrame
 
 print(
 	string.format(

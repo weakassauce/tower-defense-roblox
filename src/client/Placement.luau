@@ -236,6 +236,25 @@ function Placement.cinematicRelease()
 	lerpStartCFrame = nil
 end
 
+-- Sets character follow as the active camera mode (used for walking
+-- around the lobby).
+function Placement.enterLobbyMode()
+	cinematicCFrame = nil
+	lerpStartCFrame = nil
+	mode = "explore"
+	camera.CameraType = Enum.CameraType.Custom
+end
+
+-- Sets the top-down overview camera (used when the player touches the
+-- Realm Defense portal).
+function Placement.enterArenaMode()
+	cinematicCFrame = nil
+	lerpStartCFrame = nil
+	mode = "overview"
+	camera.CameraType = Enum.CameraType.Scriptable
+	camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
+end
+
 function Placement.init()
 	buildPreview()
 	hidePreview()

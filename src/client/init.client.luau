@@ -17,15 +17,13 @@ local player = Players.LocalPlayer
 print(string.format("[TowerDefense] Client booting for %s", player.Name))
 
 Hud.mount(function()
-	-- Home screen Play button was clicked — ask whether to run the tutorial
+	-- Home screen Play button was clicked — drop the player into the lobby
+	-- in character view so they can walk to a portal.
+	Placement.setEnabled(true)
+	Placement.enterLobbyMode()
 	Tutorial.showPrompt(function()
-		-- Yes: enable placement so the player can interact, then start tutorial
-		Placement.setEnabled(true)
 		Tutorial.start(nil)
-	end, function()
-		-- No: skip straight to free play
-		Placement.setEnabled(true)
-	end)
+	end, function() end)
 end)
 
 Placement.init()
@@ -79,6 +77,14 @@ end)
 
 Remotes.GameOver.OnClientEvent:Connect(function()
 	Hud.showGameOver()
+end)
+
+-- When the player touches the Realm Defense portal, server fires EnterRealm
+-- and we flip the camera to the top-down overview for tower placement.
+Remotes.EnterRealm.OnClientEvent:Connect(function(realm)
+	if realm == "defense" then
+		Placement.enterArenaMode()
+	end
 end)
 
 -- Keep the "Enemies" stat live between state broadcasts by polling the
