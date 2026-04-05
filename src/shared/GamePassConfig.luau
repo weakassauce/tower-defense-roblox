@@ -16,7 +16,7 @@ export type GamePassInfo = {
 local GamePassConfig = {}
 
 GamePassConfig.PREMIUM_TOWER = {
-	id = 0, -- TODO: replace with real Game Pass ID from the Creator Dashboard
+	id = 1785922595,
 	name = "Celestial Bastion",
 	price = 99,
 	description = "A legendary tower of pure starlight — massive damage, huge range, and chain-strike crystal projectiles.",
@@ -29,7 +29,7 @@ GamePassConfig.PREMIUM_TOWER_KEY = "celestial"
 -- on its own lobby pedestal and is granted + auto-equipped when the
 -- pass purchase completes on the server.
 GamePassConfig.PREMIUM_GUN = {
-	id = 0, -- TODO: replace with real Game Pass ID from the Creator Dashboard
+	id = 1785806515,
 	name = "Starfire Rifle",
 	price = 49,
 	description = "A void-forged marksman rifle. Pierces armor, obliterates tanks, and leaves a trail of starlight.",
@@ -42,7 +42,7 @@ GamePassConfig.PREMIUM_GUN_KEY = "starfire"
 -- starfire rifle so the two premium guns sit side-by-side in the lobby
 -- and players can buy them independently.
 GamePassConfig.PREMIUM_GUN_2 = {
-	id = 0, -- TODO: replace with real Game Pass ID from the Creator Dashboard
+	id = 1786012274,
 	name = "Void Reaper",
 	price = 49,
 	description = "A premium auto-shotgun from the Void Frontier. Six piercing pellets per shot, full auto.",
@@ -72,10 +72,10 @@ export type CashPackInfo = {
 --   Chest  99 R$ →  32,000  (~323 gold/R$, +13% vs Sack)
 --   Vault 249 R$ → 250,000  (~1004 gold/R$, massive whale-tier bonus)
 GamePassConfig.CASH_PACKS = {
-	{ productId = 0, robuxPrice = 20, cashAmount = 5000, label = "Pouch" },
-	{ productId = 0, robuxPrice = 49, cashAmount = 14000, label = "Sack" },
-	{ productId = 0, robuxPrice = 99, cashAmount = 32000, label = "Chest" },
-	{ productId = 0, robuxPrice = 249, cashAmount = 250000, label = "Vault" },
+	{ productId = 3570874538, robuxPrice = 20, cashAmount = 5000, label = "Pouch" },
+	{ productId = 3570874781, robuxPrice = 49, cashAmount = 14000, label = "Sack" },
+	{ productId = 3570875026, robuxPrice = 99, cashAmount = 32000, label = "Chest" },
+	{ productId = 3570875201, robuxPrice = 249, cashAmount = 250000, label = "Vault" },
 } :: { CashPackInfo }
 
 -- Look up the cash payout for a given product id. Returns nil if the
