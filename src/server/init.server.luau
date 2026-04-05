@@ -100,6 +100,8 @@ local function resetGame()
 	TowerManager.clear()
 	WaveController.reset()
 	GameState.reset()
+	-- Rebuild the castle (it may have exploded on the previous defeat)
+	Castle.build(mapData.castleCenter, Config.STARTING_HP)
 	Castle.updateHp(GameState.get().hp, Config.STARTING_HP)
 	broadcastState()
 end
@@ -215,6 +217,7 @@ RunService.Heartbeat:Connect(function(dt)
 			Castle.updateHp(GameState.get().hp, Config.STARTING_HP)
 			Castle.flashDamage()
 			if died then
+				Castle.explode()
 				Remotes.GameOver:FireAllClients()
 			end
 		elseif not enemy.alive and not enemy.reachedEnd and not enemy.rewarded then

@@ -35,11 +35,21 @@ Remotes.StateUpdate.OnClientEvent:Connect(function(state)
 	Hud.onStateUpdate(state)
 end)
 
--- Wave completion notification (currently just adjusts the wave button text
--- via the state update that follows — the bonus value is available here
--- for future toast notifications)
+-- Wave completion notification. If the player has the AUTO WAVE toggle on,
+-- fire StartWave after a short grace period.
 Remotes.WaveComplete.OnClientEvent:Connect(function(_bonus)
-	-- no-op for now
+	if not Hud.isAutoWaveEnabled() then
+		return
+	end
+	task.delay(3, function()
+		if not Hud.isAutoWaveEnabled() then
+			return
+		end
+		local state = Hud.getState()
+		if state and not state.waveActive and not state.gameOver then
+			Remotes.StartWave:FireServer()
+		end
+	end)
 end)
 
 Remotes.GameOver.OnClientEvent:Connect(function()

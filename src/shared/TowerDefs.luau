@@ -30,7 +30,8 @@ local TowerDefs: { [string]: TowerDef } = {
 	basic = {
 		name = "Archer Tower",
 		icon = "🏹",
-		cost = 40,
+		cost = 60, -- 14.4 DPS x ~4
+
 		range = 5 * SCALE,
 		damage = 12,
 		fireRate = 1.2,
@@ -43,7 +44,8 @@ local TowerDefs: { [string]: TowerDef } = {
 	sniper = {
 		name = "Wizard Tower",
 		icon = "🔮",
-		cost = 90,
+		cost = 80, -- 20.25 DPS x ~4
+
 		range = 11 * SCALE,
 		damage = 45,
 		fireRate = 0.45,
@@ -56,7 +58,8 @@ local TowerDefs: { [string]: TowerDef } = {
 	cannon = {
 		name = "Cannon Bunker",
 		icon = "💣",
-		cost = 130,
+		cost = 100, -- 18.2 DPS x ~4 + splash bonus
+
 		range = 6 * SCALE,
 		damage = 28,
 		fireRate = 0.65,
@@ -69,7 +72,8 @@ local TowerDefs: { [string]: TowerDef } = {
 	freeze = {
 		name = "Frost Spire",
 		icon = "❄️",
-		cost = 65,
+		cost = 50, -- 4.5 DPS x ~4 + slow utility bonus
+
 		range = 5 * SCALE,
 		damage = 5,
 		fireRate = 0.9,
@@ -84,7 +88,8 @@ local TowerDefs: { [string]: TowerDef } = {
 	lightning = {
 		name = "Storm Tower",
 		icon = "⚡",
-		cost = 110,
+		cost = 85, -- 12.8 DPS x ~4 + chain bonus
+
 		range = 7 * SCALE,
 		damage = 16,
 		fireRate = 0.8,
@@ -99,7 +104,8 @@ local TowerDefs: { [string]: TowerDef } = {
 	poison = {
 		name = "Alchemist Tower",
 		icon = "🧪",
-		cost = 70,
+		cost = 50, -- 4 DPS x ~4 + DoT bonus
+
 		range = 5 * SCALE,
 		damage = 4,
 		fireRate = 1.0,
@@ -114,7 +120,8 @@ local TowerDefs: { [string]: TowerDef } = {
 	flame = {
 		name = "Inferno Tower",
 		icon = "🔥",
-		cost = 85,
+		cost = 75, -- 13.2 DPS x ~4 + splash bonus
+
 		range = 4 * SCALE,
 		damage = 6,
 		fireRate = 2.2,

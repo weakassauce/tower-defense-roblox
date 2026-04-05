@@ -69,7 +69,9 @@ local towerCostLabels: { [string]: TextLabel } = {}
 local inventoryBtn: TextButton
 local inventoryCountLabel: TextLabel
 local inventoryPanel: Frame
-local inventoryList: Frame
+local inventoryList: ScrollingFrame
+local autoWaveBtn: TextButton
+local autoWaveEnabled = false
 local homeScreen: Frame
 local gameOverScreen: Frame
 local gameOverLabel: TextLabel
@@ -310,7 +312,7 @@ end
 local function buildWaveButton(parent: Instance)
 	waveBtn = makeTextButton(parent, "WaveBtn", "START WAVE 1")
 	waveBtn.Size = UDim2.fromOffset(260, 54)
-	waveBtn.Position = UDim2.new(0.5, -130, 1, -280)
+	waveBtn.Position = UDim2.new(0.5, -130, 1, -300)
 	waveBtn.BackgroundColor3 = Color3.fromRGB(76, 175, 80)
 	waveBtn.BackgroundTransparency = 0.2
 	waveBtn.TextSize = 20
@@ -319,6 +321,27 @@ local function buildWaveButton(parent: Instance)
 
 	waveBtn.Activated:Connect(function()
 		Remotes.StartWave:FireServer()
+	end)
+
+	-- Auto-wave toggle just below the main wave button
+	autoWaveBtn = makeTextButton(parent, "AutoWaveBtn", "AUTO WAVE: OFF")
+	autoWaveBtn.Size = UDim2.fromOffset(260, 32)
+	autoWaveBtn.Position = UDim2.new(0.5, -130, 1, -240)
+	autoWaveBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	autoWaveBtn.BackgroundTransparency = 0.3
+	autoWaveBtn.TextSize = 14
+	addCorner(autoWaveBtn, 6)
+	addStroke(autoWaveBtn, COLOR_ACCENT, 1)
+
+	autoWaveBtn.Activated:Connect(function()
+		autoWaveEnabled = not autoWaveEnabled
+		if autoWaveEnabled then
+			autoWaveBtn.Text = "AUTO WAVE: ON"
+			autoWaveBtn.BackgroundColor3 = Color3.fromRGB(76, 175, 80)
+		else
+			autoWaveBtn.Text = "AUTO WAVE: OFF"
+			autoWaveBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+		end
 	end)
 end
 
@@ -364,15 +387,31 @@ local function buildInventory(parent: Instance)
 	title.Position = UDim2.fromOffset(0, 12)
 	title.TextXAlignment = Enum.TextXAlignment.Center
 
-	inventoryList = makeFrame(inventoryPanel, "List")
-	inventoryList.Size = UDim2.new(1, -24, 1, -64)
-	inventoryList.Position = UDim2.fromOffset(12, 52)
-	inventoryList.BackgroundTransparency = 1
+	-- ScrollingFrame so many items don't overflow below the panel
+	local scrollList = Instance.new("ScrollingFrame")
+	scrollList.Name = "List"
+	scrollList.Size = UDim2.new(1, -24, 1, -64)
+	scrollList.Position = UDim2.fromOffset(12, 52)
+	scrollList.BackgroundTransparency = 1
+	scrollList.BorderSizePixel = 0
+	scrollList.ScrollBarThickness = 6
+	scrollList.ScrollBarImageColor3 = COLOR_ACCENT
+	scrollList.ScrollBarImageTransparency = 0.2
+	scrollList.ScrollingDirection = Enum.ScrollingDirection.Y
+	scrollList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scrollList.CanvasSize = UDim2.fromScale(0, 0)
+	scrollList.Parent = inventoryPanel
+	inventoryList = scrollList
 
 	local listLayout = Instance.new("UIListLayout")
 	listLayout.FillDirection = Enum.FillDirection.Vertical
 	listLayout.Padding = UDim.new(0, 8)
+	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	listLayout.Parent = inventoryList
+
+	local listPadding = Instance.new("UIPadding")
+	listPadding.PaddingRight = UDim.new(0, 6) -- room for the scroll bar
+	listPadding.Parent = inventoryList
 
 	inventoryBtn.Activated:Connect(function()
 		inventoryPanel.Visible = not inventoryPanel.Visible
@@ -809,6 +848,10 @@ function Hud.getElement(name: string): GuiObject?
 		return nil
 	end
 	return screen:FindFirstChild(name, true) :: GuiObject?
+end
+
+function Hud.isAutoWaveEnabled(): boolean
+	return autoWaveEnabled
 end
 
 return Hud

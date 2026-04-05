@@ -127,8 +127,10 @@ local function buildOverlay()
 	-- Highlight (pulsing stroke tracks the target element)
 	highlightFrame = Instance.new("Frame")
 	highlightFrame.Name = "Highlight"
+	highlightFrame.AnchorPoint = Vector2.new(0, 0)
 	highlightFrame.BackgroundTransparency = 1
 	highlightFrame.Visible = false
+	highlightFrame.ZIndex = 10
 	highlightFrame.Parent = screen
 	addCorner(highlightFrame, 14)
 	highlightStroke = addStroke(highlightFrame, COLOR_HIGHLIGHT, 5)
@@ -136,6 +138,7 @@ local function buildOverlay()
 	-- Bouncing arrow pointer
 	local pl = Instance.new("TextLabel")
 	pl.Name = "Pointer"
+	pl.AnchorPoint = Vector2.new(0, 0)
 	pl.Size = UDim2.fromOffset(80, 80)
 	pl.BackgroundTransparency = 1
 	pl.Text = "⬇"
@@ -145,6 +148,7 @@ local function buildOverlay()
 	pl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	pl.TextStrokeTransparency = 0
 	pl.Visible = false
+	pl.ZIndex = 11
 	pl.Parent = screen
 	pointerLabel = pl
 
@@ -254,11 +258,16 @@ local function updateHighlight(targetName: string?)
 		highlightFrame.Visible = false
 		return
 	end
-	local pad = 10
-	highlightFrame.Position =
-		UDim2.fromOffset(target.AbsolutePosition.X - pad, target.AbsolutePosition.Y - pad)
-	highlightFrame.Size =
-		UDim2.fromOffset(target.AbsoluteSize.X + pad * 2, target.AbsoluteSize.Y + pad * 2)
+	-- Skip the first frame until the target's layout has been computed
+	local absSize = target.AbsoluteSize
+	if absSize.X <= 0 or absSize.Y <= 0 then
+		highlightFrame.Visible = false
+		return
+	end
+	local pad = 14
+	local absPos = target.AbsolutePosition
+	highlightFrame.Position = UDim2.fromOffset(absPos.X - pad, absPos.Y - pad)
+	highlightFrame.Size = UDim2.fromOffset(absSize.X + pad * 2, absSize.Y + pad * 2)
 	highlightFrame.Visible = true
 end
 
@@ -374,6 +383,9 @@ function Tutorial.start(onComplete: (() -> ())?)
 	steps = buildSteps()
 	currentStepIndex = 0
 	buildOverlay()
+	-- Yield one frame so the overlay + HUD layouts are computed before
+	-- we query any AbsolutePosition/AbsoluteSize for highlighting.
+	RunService.Heartbeat:Wait()
 	Tutorial._advance()
 
 	heartbeatConn = RunService.Heartbeat:Connect(function()

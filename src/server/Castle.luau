@@ -7,6 +7,7 @@
 local Castle = {}
 
 local castleFolder: Folder? = nil
+local castleCenter: Vector3 = Vector3.new(0, 0, 0)
 local hpFill: Frame? = nil
 local hpText: TextLabel? = nil
 local bodyParts: { Part } = {}
@@ -58,6 +59,7 @@ function Castle.build(pos: Vector3, maxHp: number): { Vector3 }
 	castleFolder = Instance.new("Folder")
 	castleFolder.Name = "Castle"
 	castleFolder.Parent = workspace
+	castleCenter = pos
 	bodyParts = {}
 	originalColors = {}
 
@@ -281,6 +283,60 @@ function Castle.flashDamage()
 		task.wait(0.12)
 		for _, part in bodyParts do
 			part.Color = originalColors[part] or part.Color
+		end
+	end)
+end
+
+-- Unanchors every castle part and launches it outward/upward so the
+-- castle physically blows apart when the player loses. The folder is
+-- destroyed after a short delay so the pieces can fall and settle.
+function Castle.explode()
+	local folder = castleFolder
+	if not folder then
+		return
+	end
+
+	local center = castleCenter
+	for _, child in folder:GetDescendants() do
+		if child:IsA("BasePart") then
+			local dx = child.Position.X - center.X
+			local dz = child.Position.Z - center.Z
+			local dir: Vector3
+			local distSq = dx * dx + dz * dz
+			if distSq < 0.25 then
+				dir = Vector3.new(math.random() - 0.5, 0, math.random() - 0.5)
+				if dir.Magnitude < 0.01 then
+					dir = Vector3.new(1, 0, 0)
+				end
+				dir = dir.Unit
+			else
+				dir = Vector3.new(dx, 0, dz).Unit
+			end
+
+			child.Anchored = false
+			child.CanCollide = true
+			child.CastShadow = true
+			child.AssemblyLinearVelocity = dir * (25 + math.random() * 15)
+				+ Vector3.new(0, 45 + math.random() * 30, 0)
+			child.AssemblyAngularVelocity = Vector3.new(
+				(math.random() - 0.5) * 12,
+				(math.random() - 0.5) * 12,
+				(math.random() - 0.5) * 12
+			)
+		end
+	end
+
+	-- Clear refs since the pieces are now owned by physics
+	hpFill = nil
+	hpText = nil
+	bodyParts = {}
+
+	task.delay(5, function()
+		if folder and folder.Parent then
+			folder:Destroy()
+		end
+		if castleFolder == folder then
+			castleFolder = nil
 		end
 	end)
 end
