@@ -47,12 +47,10 @@ spawn.Parent = workspace
 
 local mapData = Map.build()
 
--- Place the castle just past the final path waypoint and extend the
--- waypoint list with the two interior spots so enemies visibly march into
--- the gate before dying.
-local finalPathPoint = mapData.waypoints[#mapData.waypoints]
-local castlePos = Vector3.new(finalPathPoint.X + 15, 0, finalPathPoint.Z)
-local extraWaypoints = Castle.build(castlePos, Config.STARTING_HP)
+-- Build the castle at the position Map chose (inside the wall wrap) and
+-- extend the waypoint list so enemies visibly march into the gate before
+-- dying.
+local extraWaypoints = Castle.build(mapData.castleCenter, Config.STARTING_HP)
 for _, wp in extraWaypoints do
 	table.insert(mapData.waypoints, wp)
 end

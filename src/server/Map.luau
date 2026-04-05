@@ -1,8 +1,9 @@
 --!strict
 -- src/server/Map.luau
--- Builds the physical map: ground, grid cells (grass/path), border walls,
--- and returns the waypoint list enemies walk along.
--- Ported from map.js.
+-- Builds the physical map: ground, grid cells, border walls that wrap
+-- around the castle on the east side, vegetation, a dense outer tree
+-- ring, and the enemy-path waypoints. Returns the castle position so
+-- the server script can build the castle model at the right place.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = require(ReplicatedStorage.Shared)
@@ -14,14 +15,20 @@ export type MapData = {
 	folder: Folder,
 	cells: Folder,
 	waypoints: { Vector3 },
+	castleCenter: Vector3,
 }
 
--- Colors (RGB 0-255, matches the Three.js palette)
+-- Colors
 local COLOR_GROUND = Color3.fromRGB(46, 85, 34)
 local COLOR_GRASS = Color3.fromRGB(67, 160, 71)
 local COLOR_PATH = Color3.fromRGB(141, 110, 99)
 local COLOR_WALL = Color3.fromRGB(97, 97, 97)
 local COLOR_WALL_DARK = Color3.fromRGB(66, 66, 66)
+
+-- Castle geometry (must match Castle.luau)
+local CASTLE_OFFSET_X = 15
+local CASTLE_HALF_W = 11 -- x half-extent (a bit larger than actual for safety)
+local CASTLE_HALF_L = 13 -- z half-extent
 
 local function makePart(parent: Instance, name: string): Part
 	local p = Instance.new("Part")
@@ -35,7 +42,6 @@ local function makePart(parent: Instance, name: string): Part
 end
 
 function Map.build(): MapData
-	-- Clean up any previous map (hot-reload safe)
 	local existing = workspace:FindFirstChild("Map")
 	if existing then
 		existing:Destroy()
@@ -45,9 +51,8 @@ function Map.build(): MapData
 	mapFolder.Name = "Map"
 	mapFolder.Parent = workspace
 
-	-- --- Ground platform (extends well beyond the grid so vegetation
-	-- around the map has something to stand on) ---
-	local padding = 120
+	-- --- Ground platform (big enough to host the castle + dense tree ring) ---
+	local padding = 200
 	local groundSize = Config.GRID_SIZE * Config.CELL_SIZE + padding
 	local ground = makePart(mapFolder, "Ground")
 	ground.Size = Vector3.new(groundSize, 2, groundSize)
@@ -77,23 +82,28 @@ function Map.build(): MapData
 				cell.Material = Enum.Material.Grass
 			end
 
-			-- Attributes let the rest of the game query grid info off any cell
 			cell:SetAttribute("gx", gx)
 			cell:SetAttribute("gy", gy)
 			cell:SetAttribute("isPath", isPath)
 		end
 	end
 
-	-- --- Invisible containment walls at the ground-plate edges ---
-	-- These stop the character from jumping over the stone walls and
-	-- walking off the world. Transparent, collidable, tall enough for any
-	-- reasonable jump.
+	-- --- Path waypoints + castle center (derived before walls) ---
+	local waypoints: { Vector3 } = {}
+	for i, coord in Config.PATH do
+		local pos = Config.gridToWorld(coord[1], coord[2])
+		waypoints[i] = Vector3.new(pos.X, 2, pos.Z)
+	end
+	local finalWp = waypoints[#waypoints]
+	local castleCenter = Vector3.new(finalWp.X + CASTLE_OFFSET_X, 0, finalWp.Z)
+
+	-- --- Invisible containment walls at the ground edges ---
 	local invis = Instance.new("Folder")
 	invis.Name = "InvisibleWalls"
 	invis.Parent = mapFolder
 
 	local groundHalf = groundSize / 2
-	local invHeight = 60
+	local invHeight = 80
 	local function makeInvisibleWall(name: string, size: Vector3, pos: Vector3)
 		local w = makePart(invis, name)
 		w.Size = size
@@ -145,18 +155,56 @@ function Map.build(): MapData
 
 	makeWall("WallN", 0, -halfGrid - wallThickness / 2, wallOuterLength, wallThickness)
 	makeWall("WallS", 0, halfGrid + wallThickness / 2, wallOuterLength, wallThickness)
-	makeWall("WallE", halfGrid + wallThickness / 2, 0, wallThickness, wallOuterLength)
 	makeWall("WallW", -halfGrid - wallThickness / 2, 0, wallThickness, wallOuterLength)
 
-	-- Corner watch towers at each corner of the wall
+	-- The east wall wraps around the castle. Split it into two segments
+	-- skipping the castle's z range, then add three wrap walls.
+	local castleEastX = castleCenter.X + CASTLE_HALF_W + wallThickness / 2
+	local castleNorthZ = castleCenter.Z - CASTLE_HALF_L -- smaller z
+	local castleSouthZ = castleCenter.Z + CASTLE_HALF_L -- larger z
+
+	local wallEastX = halfGrid + wallThickness / 2
+	local outerNorthZ = -halfGrid - wallThickness
+	local outerSouthZ = halfGrid + wallThickness
+
+	-- Upper east segment (from outerNorthZ to castleNorthZ at wallEastX)
+	do
+		local length = castleNorthZ - outerNorthZ
+		local centerZ = (outerNorthZ + castleNorthZ) / 2
+		makeWall("WallE_N", wallEastX, centerZ, wallThickness, length)
+	end
+
+	-- Lower east segment (from castleSouthZ to outerSouthZ at wallEastX)
+	do
+		local length = outerSouthZ - castleSouthZ
+		local centerZ = (castleSouthZ + outerSouthZ) / 2
+		makeWall("WallE_S", wallEastX, centerZ, wallThickness, length)
+	end
+
+	-- Castle wrap — north wall from wallEastX out to castleEastX
+	do
+		local length = castleEastX - wallEastX
+		local centerX = (wallEastX + castleEastX) / 2
+		makeWall("WrapN", centerX, castleNorthZ, length, wallThickness)
+	end
+	-- Castle wrap — south wall
+	do
+		local length = castleEastX - wallEastX
+		local centerX = (wallEastX + castleEastX) / 2
+		makeWall("WrapS", centerX, castleSouthZ, length, wallThickness)
+	end
+	-- Castle wrap — outer east wall
+	do
+		local length = castleSouthZ - castleNorthZ + wallThickness
+		makeWall("WrapE", castleEastX, castleCenter.Z, wallThickness, length)
+	end
+
+	-- Corner watch towers (4 at the original grid corners, plus 2 at the castle wrap corners)
 	local corners = Instance.new("Folder")
 	corners.Name = "Corners"
 	corners.Parent = mapFolder
 
-	for _, signs in { { -1, -1 }, { -1, 1 }, { 1, -1 }, { 1, 1 } } do
-		local cx = signs[1] * (halfGrid + wallThickness / 2)
-		local cz = signs[2] * (halfGrid + wallThickness / 2)
-
+	local function makeCornerTower(cx: number, cz: number)
 		local base = makePart(corners, "CornerBase")
 		base.Size = Vector3.new(4, 7, 4)
 		base.Position = Vector3.new(cx, 3.5, cz)
@@ -170,20 +218,64 @@ function Map.build(): MapData
 		cap.Material = Enum.Material.Brick
 	end
 
-	-- --- Vegetation (trees / bushes / rocks) outside the walls ---
+	for _, signs in { { -1, -1 }, { -1, 1 }, { 1, -1 }, { 1, 1 } } do
+		makeCornerTower(
+			signs[1] * (halfGrid + wallThickness / 2),
+			signs[2] * (halfGrid + wallThickness / 2)
+		)
+	end
+	makeCornerTower(castleEastX, castleNorthZ)
+	makeCornerTower(castleEastX, castleSouthZ)
+
+	-- --- Vegetation ---
 	local vegetation = Instance.new("Folder")
 	vegetation.Name = "Vegetation"
 	vegetation.Parent = mapFolder
 
 	local vegRng = Random.new(20260404)
-	local innerEdge = halfGrid + 6 -- start a few studs beyond the walls
-	local outerEdge = halfGrid + (groundSize / 2 - halfGrid) - 4
+	local innerEdge = halfGrid + 6
+	local ringInnerEdge = groundHalf - 30 -- beginning of the dense outer ring
+	local outerEdge = groundHalf - 8 -- outer cap for all vegetation
 
-	local function randomOutsidePoint(): (number, number)
-		-- Pick a random spot in the padding ring around the grid
+	-- Returns true if (x,z) falls inside the castle wrap area so we can
+	-- skip vegetation there.
+	local function insideCastleArea(x: number, z: number): boolean
+		local dx = math.abs(x - castleCenter.X)
+		local dz = math.abs(z - castleCenter.Z)
+		return dx <= CASTLE_HALF_W + 3 and dz <= CASTLE_HALF_L + 3
+	end
+
+	-- Picks a point between the grid walls and the inner edge of the tree
+	-- ring. Rejects (retries) up to 8 times if the point lands in the
+	-- castle area.
+	local function randomMidPoint(): (number, number)
+		for _ = 1, 8 do
+			local side = vegRng:NextInteger(1, 4)
+			local along = vegRng:NextNumber(-ringInnerEdge, ringInnerEdge)
+			local perp = vegRng:NextNumber(innerEdge, ringInnerEdge)
+			local x, z
+			if side == 1 then
+				x, z = along, -perp
+			elseif side == 2 then
+				x, z = along, perp
+			elseif side == 3 then
+				x, z = -perp, along
+			else
+				x, z = perp, along
+			end
+			if not insideCastleArea(x, z) then
+				return x, z
+			end
+		end
+		-- Fallback: some far corner
+		return ringInnerEdge - 5, ringInnerEdge - 5
+	end
+
+	-- Picks a point inside the dense outer ring (near the ground edge)
+	local function randomRingPoint(): (number, number)
 		local side = vegRng:NextInteger(1, 4)
 		local along = vegRng:NextNumber(-outerEdge, outerEdge)
-		local perp = vegRng:NextNumber(innerEdge, outerEdge)
+		local perp = vegRng:NextNumber(ringInnerEdge, outerEdge)
 		if side == 1 then
 			return along, -perp
 		elseif side == 2 then
@@ -195,7 +287,6 @@ function Map.build(): MapData
 		end
 	end
 
-	-- Trees: slim trunk + large spherical canopy
 	local TRUNK_COLOR = Color3.fromRGB(82, 52, 36)
 	local CANOPY_COLORS = {
 		Color3.fromRGB(27, 94, 32),
@@ -203,13 +294,21 @@ function Map.build(): MapData
 		Color3.fromRGB(46, 125, 50),
 		Color3.fromRGB(20, 82, 28),
 	}
-	for i = 1, 70 do
-		local tx, tz = randomOutsidePoint()
-		local scale = 0.85 + vegRng:NextNumber() * 0.7
+	local BUSH_COLORS = {
+		Color3.fromRGB(56, 142, 60),
+		Color3.fromRGB(67, 160, 71),
+		Color3.fromRGB(46, 125, 50),
+	}
+	local ROCK_COLORS = {
+		Color3.fromRGB(117, 117, 117),
+		Color3.fromRGB(97, 97, 97),
+		Color3.fromRGB(78, 78, 78),
+	}
 
+	local function spawnTree(i: number, x: number, z: number, scale: number)
 		local trunk = makePart(vegetation, "Trunk_" .. i)
 		trunk.Size = Vector3.new(1.2 * scale, 7 * scale, 1.2 * scale)
-		trunk.Position = Vector3.new(tx, 3.5 * scale, tz)
+		trunk.Position = Vector3.new(x, 3.5 * scale, z)
 		trunk.Color = TRUNK_COLOR
 		trunk.Material = Enum.Material.Wood
 		trunk.CanCollide = false
@@ -217,20 +316,22 @@ function Map.build(): MapData
 		local canopy = makePart(vegetation, "Canopy_" .. i)
 		canopy.Shape = Enum.PartType.Ball
 		canopy.Size = Vector3.new(6 * scale, 6 * scale, 6 * scale)
-		canopy.Position = Vector3.new(tx, 8.5 * scale, tz)
+		canopy.Position = Vector3.new(x, 8.5 * scale, z)
 		canopy.Color = CANOPY_COLORS[vegRng:NextInteger(1, #CANOPY_COLORS)]
 		canopy.Material = Enum.Material.Grass
 		canopy.CanCollide = false
 	end
 
-	-- Bushes: small green spheres clustered on the ground
-	local BUSH_COLORS = {
-		Color3.fromRGB(56, 142, 60),
-		Color3.fromRGB(67, 160, 71),
-		Color3.fromRGB(46, 125, 50),
-	}
+	-- Scattered trees in the mid-zone (between walls and outer ring)
+	for i = 1, 70 do
+		local tx, tz = randomMidPoint()
+		local scale = 0.85 + vegRng:NextNumber() * 0.7
+		spawnTree(i, tx, tz, scale)
+	end
+
+	-- Bushes in the mid-zone
 	for i = 1, 50 do
-		local bx, bz = randomOutsidePoint()
+		local bx, bz = randomMidPoint()
 		local s = 1.5 + vegRng:NextNumber() * 1.3
 		local bush = makePart(vegetation, "Bush_" .. i)
 		bush.Shape = Enum.PartType.Ball
@@ -241,14 +342,9 @@ function Map.build(): MapData
 		bush.CanCollide = false
 	end
 
-	-- Rocks: irregular grey boulders
-	local ROCK_COLORS = {
-		Color3.fromRGB(117, 117, 117),
-		Color3.fromRGB(97, 97, 97),
-		Color3.fromRGB(78, 78, 78),
-	}
+	-- Rocks in the mid-zone
 	for i = 1, 35 do
-		local rx, rz = randomOutsidePoint()
+		local rx, rz = randomMidPoint()
 		local sx = 1.4 + vegRng:NextNumber() * 2
 		local sy = 0.8 + vegRng:NextNumber() * 1.2
 		local sz = 1.4 + vegRng:NextNumber() * 2
@@ -261,18 +357,20 @@ function Map.build(): MapData
 		rock.CanCollide = false
 	end
 
-	-- --- Waypoints for enemy pathing ---
-	-- Enemies will interpolate between these Vector3s in order.
-	local waypoints: { Vector3 } = {}
-	for i, coord in Config.PATH do
-		local pos = Config.gridToWorld(coord[1], coord[2])
-		waypoints[i] = Vector3.new(pos.X, 2, pos.Z)
+	-- --- Dense outer tree ring (visual barrier hiding the ground edge) ---
+	-- Large trees packed close together near the ground edges, forming a
+	-- forest wall so the player never sees the end of the world.
+	for i = 1, 240 do
+		local tx, tz = randomRingPoint()
+		local scale = 1.4 + vegRng:NextNumber() * 0.9
+		spawnTree(1000 + i, tx, tz, scale)
 	end
 
 	return {
 		folder = mapFolder,
 		cells = cells,
 		waypoints = waypoints,
+		castleCenter = castleCenter,
 	}
 end
 
