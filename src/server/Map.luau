@@ -51,9 +51,17 @@ function Map.build(): MapData
 	mapFolder.Name = "Map"
 	mapFolder.Parent = workspace
 
-	-- --- Ground platform (big enough to host the castle + dense tree ring) ---
-	local padding = 200
-	local groundSize = Config.GRID_SIZE * Config.CELL_SIZE + padding
+	-- --- Ground platform ---
+	-- Two radii:
+	--   arenaSize = the playable area (invisible walls are anchored here).
+	--   groundSize = the full mainland, extending well past the walls to
+	--                host the mountain range that surrounds everything.
+	local arenaPadding = 200
+	local arenaSize = Config.GRID_SIZE * Config.CELL_SIZE + arenaPadding -- 328
+	local arenaHalf = arenaSize / 2 -- 164
+
+	local mountainPadding = 400
+	local groundSize = arenaSize + mountainPadding -- 728
 	local ground = makePart(mapFolder, "Ground")
 	ground.Size = Vector3.new(groundSize, 2, groundSize)
 	ground.Position = Vector3.new(0, -1, 0)
@@ -97,7 +105,10 @@ function Map.build(): MapData
 	local finalWp = waypoints[#waypoints]
 	local castleCenter = Vector3.new(finalWp.X + CASTLE_OFFSET_X, 0, finalWp.Z)
 
-	-- --- Invisible containment walls at the ground edges ---
+	-- --- Invisible containment walls at the arena edges ---
+	-- Anchored to the arena size (not the full ground) so the player is
+	-- contained to the play area even though the ground extends further
+	-- out for the mountains.
 	local invis = Instance.new("Folder")
 	invis.Name = "InvisibleWalls"
 	invis.Parent = mapFolder
@@ -116,23 +127,23 @@ function Map.build(): MapData
 	end
 	makeInvisibleWall(
 		"InvN",
-		Vector3.new(groundSize, invHeight, 2),
-		Vector3.new(0, invHeight / 2, -groundHalf)
+		Vector3.new(arenaSize, invHeight, 2),
+		Vector3.new(0, invHeight / 2, -arenaHalf)
 	)
 	makeInvisibleWall(
 		"InvS",
-		Vector3.new(groundSize, invHeight, 2),
-		Vector3.new(0, invHeight / 2, groundHalf)
+		Vector3.new(arenaSize, invHeight, 2),
+		Vector3.new(0, invHeight / 2, arenaHalf)
 	)
 	makeInvisibleWall(
 		"InvE",
-		Vector3.new(2, invHeight, groundSize),
-		Vector3.new(groundHalf, invHeight / 2, 0)
+		Vector3.new(2, invHeight, arenaSize),
+		Vector3.new(arenaHalf, invHeight / 2, 0)
 	)
 	makeInvisibleWall(
 		"InvW",
-		Vector3.new(2, invHeight, groundSize),
-		Vector3.new(-groundHalf, invHeight / 2, 0)
+		Vector3.new(2, invHeight, arenaSize),
+		Vector3.new(-arenaHalf, invHeight / 2, 0)
 	)
 
 	-- --- Border stone walls ---
@@ -234,8 +245,9 @@ function Map.build(): MapData
 
 	local vegRng = Random.new(20260404)
 	local innerEdge = halfGrid + 6
-	local ringInnerEdge = groundHalf - 30 -- beginning of the dense outer ring
-	local outerEdge = groundHalf - 8 -- outer cap for all vegetation
+	-- The tree ring stays anchored to the arena edge, not the full ground
+	local ringInnerEdge = arenaHalf - 30 -- beginning of the dense outer ring
+	local outerEdge = arenaHalf - 8 -- outer cap for all vegetation
 
 	-- Returns true if (x,z) falls inside the castle wrap area so we can
 	-- skip vegetation there.
@@ -358,12 +370,100 @@ function Map.build(): MapData
 	end
 
 	-- --- Dense outer tree ring (visual barrier hiding the ground edge) ---
-	-- Large trees packed close together near the ground edges, forming a
-	-- forest wall so the player never sees the end of the world.
+	-- Large trees packed close together near the arena edges, forming a
+	-- forest wall between the arena and the mountains.
 	for i = 1, 240 do
 		local tx, tz = randomRingPoint()
 		local scale = 1.4 + vegRng:NextNumber() * 0.9
 		spawnTree(1000 + i, tx, tz, scale)
+	end
+
+	-- --- Mountain range (outside the invisible walls) ---
+	-- Tall stepped stone peaks placed in a band between the arena tree
+	-- ring and the far ground edge. Still sitting on the main ground
+	-- plate so they look connected to the mainland.
+	local mountains = Instance.new("Folder")
+	mountains.Name = "Mountains"
+	mountains.Parent = mapFolder
+
+	local mountainInnerEdge = arenaHalf + 40
+	local mountainOuterEdge = groundHalf - 25
+
+	local function randomMountainPoint(): (number, number)
+		local side = vegRng:NextInteger(1, 4)
+		local along = vegRng:NextNumber(-(groundHalf - 15), groundHalf - 15)
+		local perp = vegRng:NextNumber(mountainInnerEdge, mountainOuterEdge)
+		if side == 1 then
+			return along, -perp
+		elseif side == 2 then
+			return along, perp
+		elseif side == 3 then
+			return -perp, along
+		else
+			return perp, along
+		end
+	end
+
+	local ROCK_LIGHT = Color3.fromRGB(128, 118, 105)
+	local ROCK_MID = Color3.fromRGB(105, 96, 85)
+	local ROCK_DARK = Color3.fromRGB(78, 72, 65)
+	local SNOW = Color3.fromRGB(240, 240, 245)
+
+	local function buildMountain(i: number, mx: number, mz: number)
+		local baseW = 24 + vegRng:NextNumber() * 24 -- 24-48
+		local baseH = 22 + vegRng:NextNumber() * 20 -- 22-42
+		local midW = baseW * (0.55 + vegRng:NextNumber() * 0.15)
+		local midH = 18 + vegRng:NextNumber() * 18 -- 18-36
+		local peakW = midW * (0.45 + vegRng:NextNumber() * 0.2)
+		local peakH = 10 + vegRng:NextNumber() * 16 -- 10-26
+		local yaw = vegRng:NextNumber() * math.pi * 2
+
+		-- Base (wide foot, partially sunken so it reads as "growing" from ground)
+		local base = makePart(mountains, "MntBase_" .. i)
+		base.Size = Vector3.new(baseW, baseH, baseW)
+		base.CFrame = CFrame.new(mx, baseH / 2 - 2, mz) * CFrame.Angles(0, yaw, 0)
+		base.Color = ROCK_DARK
+		base.Material = Enum.Material.Rock
+		base.CanCollide = false
+
+		-- Middle slab
+		local offX = (vegRng:NextNumber() - 0.5) * baseW * 0.15
+		local offZ = (vegRng:NextNumber() - 0.5) * baseW * 0.15
+		local mid = makePart(mountains, "MntMid_" .. i)
+		mid.Size = Vector3.new(midW, midH, midW)
+		mid.CFrame = CFrame.new(mx + offX, baseH + midH / 2 - 2, mz + offZ)
+			* CFrame.Angles(0, yaw + 0.35, 0)
+		mid.Color = ROCK_MID
+		mid.Material = Enum.Material.Rock
+		mid.CanCollide = false
+
+		-- Upper ledge
+		local upperW = midW * 0.7
+		local upperH = 10 + vegRng:NextNumber() * 12
+		local upper = makePart(mountains, "MntUpper_" .. i)
+		upper.Size = Vector3.new(upperW, upperH, upperW)
+		upper.CFrame = CFrame.new(mx + offX * 0.6, baseH + midH + upperH / 2 - 2, mz + offZ * 0.6)
+			* CFrame.Angles(0, yaw + 0.7, 0)
+		upper.Color = ROCK_LIGHT
+		upper.Material = Enum.Material.Rock
+		upper.CanCollide = false
+
+		-- Snowy peak
+		local peak = makePart(mountains, "MntPeak_" .. i)
+		peak.Size = Vector3.new(peakW, peakH, peakW)
+		peak.CFrame = CFrame.new(
+			mx + offX * 0.3,
+			baseH + midH + upperH + peakH / 2 - 2,
+			mz + offZ * 0.3
+		) * CFrame.Angles(0, yaw + 1.1, 0)
+		peak.Color = SNOW
+		peak.Material = Enum.Material.Snow
+		peak.CanCollide = false
+	end
+
+	for i = 1, 48 do
+		local mx, mz = randomMountainPoint()
+		buildMountain(i, mx, mz)
 	end
 
 	return {
