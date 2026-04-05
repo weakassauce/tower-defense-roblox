@@ -46,6 +46,10 @@ Remotes.PlaceFromInventory = getOrMakeRemote("PlaceFromInventory")
 Remotes.SellInventoryItem = getOrMakeRemote("SellInventoryItem")
 Remotes.StartWave = getOrMakeRemote("StartWave")
 Remotes.Restart = getOrMakeRemote("Restart")
+Remotes.ReturnToLobby = getOrMakeRemote("ReturnToLobby")
+Remotes.BuyGun = getOrMakeRemote("BuyGun")
+Remotes.EquipGun = getOrMakeRemote("EquipGun")
+Remotes.FireGun = getOrMakeRemote("FireGun")
 
 -- Server → Client (state sync + events)
 Remotes.StateUpdate = getOrMakeRemote("StateUpdate")
@@ -53,5 +57,6 @@ Remotes.WaveComplete = getOrMakeRemote("WaveComplete")
 Remotes.GameOver = getOrMakeRemote("GameOver")
 Remotes.CastleDestroyed = getOrMakeRemote("CastleDestroyed")
 Remotes.EnterRealm = getOrMakeRemote("EnterRealm")
+Remotes.GunFired = getOrMakeRemote("GunFired")
 
 return Remotes

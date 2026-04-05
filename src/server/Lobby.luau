@@ -6,18 +6,34 @@
 -- future realms.
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local RealmDefs = require(ReplicatedStorage.Shared.RealmDefs)
 
 local Lobby = {}
+
+export type PortalRefs = {
+	name: string,
+	shimmer: Part,
+	stateLabel: TextLabel,
+	lockBar: Part?,
+	active: boolean, -- whether touching it currently fires onEnterRealm
+}
 
 export type LobbyData = {
 	folder: Folder,
 	spawnCFrame: CFrame,
+	portals: { PortalRefs },
 }
 
-local LOBBY_CENTER = Vector3.new(0, 500, 500)
-local SPAWN_OFFSET = Vector3.new(0, 2, 18)
+-- Pushed well clear of the arena so nothing from the battle map bleeds
+-- into the skybox behind the lobby.
+local LOBBY_CENTER = Vector3.new(0, 1500, 3000)
+-- Lifted well above the grass so PivotTo teleports don't bury the
+-- character inside the island collision.
+local SPAWN_OFFSET = Vector3.new(0, 6, 18)
 local PORTAL_ROW_Z_OFFSET = -32
-local PORTAL_SPACING = 22
+local PORTAL_SPACING = 20
 
 type PortalTheme = {
 	name: string,
@@ -44,7 +60,7 @@ local THEMES: { PortalTheme } = {
 	{
 		name = "frost",
 		label = "FROST KINGDOM",
-		active = false,
+		active = true,
 		pillar = Color3.fromRGB(144, 164, 174),
 		beam = Color3.fromRGB(94, 114, 128),
 		shimmer = Color3.fromRGB(100, 200, 255),
@@ -54,7 +70,7 @@ local THEMES: { PortalTheme } = {
 	{
 		name = "desert",
 		label = "DESERT WASTES",
-		active = false,
+		active = true,
 		pillar = Color3.fromRGB(200, 170, 110),
 		beam = Color3.fromRGB(150, 120, 70),
 		shimmer = Color3.fromRGB(255, 200, 80),
@@ -64,12 +80,22 @@ local THEMES: { PortalTheme } = {
 	{
 		name = "forest",
 		label = "DARK FOREST",
-		active = false,
+		active = true,
 		pillar = Color3.fromRGB(70, 55, 40),
 		beam = Color3.fromRGB(50, 35, 25),
 		shimmer = Color3.fromRGB(80, 200, 100),
 		labelColor = Color3.fromRGB(140, 230, 160),
 		material = Enum.Material.WoodPlanks,
+	},
+	{
+		name = "space",
+		label = "VOID FRONTIER",
+		active = true,
+		pillar = Color3.fromRGB(60, 52, 90),
+		beam = Color3.fromRGB(40, 34, 65),
+		shimmer = Color3.fromRGB(180, 90, 240),
+		labelColor = Color3.fromRGB(220, 180, 255),
+		material = Enum.Material.Metal,
 	},
 }
 
@@ -92,7 +118,7 @@ local function buildPortal(
 	theme: PortalTheme,
 	center: Vector3,
 	onTouched: (Player) -> ()
-): ()
+): PortalRefs
 	local folder = Instance.new("Folder")
 	folder.Name = "Portal_" .. theme.name
 	folder.Parent = parent
@@ -151,7 +177,7 @@ local function buildPortal(
 	-- Realm label floating above the beam
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "Label"
-	billboard.Size = UDim2.fromOffset(240, 60)
+	billboard.Size = UDim2.fromOffset(280, 70)
 	billboard.StudsOffset = Vector3.new(0, 4, 0)
 	billboard.AlwaysOnTop = false
 	billboard.LightInfluence = 0
@@ -159,7 +185,7 @@ local function buildPortal(
 	billboard.Parent = folder:FindFirstChild("Beam")
 
 	local nameLabel = Instance.new("TextLabel")
-	nameLabel.Size = UDim2.fromScale(1, 0.6)
+	nameLabel.Size = UDim2.fromScale(1, 0.55)
 	nameLabel.Position = UDim2.fromScale(0, 0)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Text = theme.label
@@ -171,37 +197,36 @@ local function buildPortal(
 	nameLabel.Parent = billboard
 
 	local stateLabel = Instance.new("TextLabel")
-	stateLabel.Size = UDim2.fromScale(1, 0.4)
-	stateLabel.Position = UDim2.fromScale(0, 0.6)
+	stateLabel.Name = "StateLabel"
+	stateLabel.Size = UDim2.fromScale(1, 0.45)
+	stateLabel.Position = UDim2.fromScale(0, 0.55)
 	stateLabel.BackgroundTransparency = 1
-	stateLabel.Text = theme.active and "[ TOUCH TO ENTER ]" or "[ COMING SOON ]"
+	stateLabel.Text = "[ TOUCH TO ENTER ]"
 	stateLabel.Font = Enum.Font.GothamBold
-	stateLabel.TextSize = 16
-	stateLabel.TextColor3 = theme.active and Color3.fromRGB(120, 255, 140)
-		or Color3.fromRGB(180, 180, 180)
+	stateLabel.TextSize = 15
+	stateLabel.TextColor3 = Color3.fromRGB(120, 255, 140)
 	stateLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	stateLabel.TextStrokeTransparency = 0
 	stateLabel.Parent = billboard
 
-	if not theme.active then
-		shimmer.Transparency = 0.72
-		-- Dim the inactive portal so it reads as "not available"
-		local stroke = Instance.new("Part")
-		stroke.Name = "LockBar"
-		stroke.Size = Vector3.new(8, 0.8, 0.6)
-		stroke.Position = Vector3.new(cx, cy + 1 + (pillarH - 1) / 2, cz)
-		stroke.Color = Color3.fromRGB(40, 40, 40)
-		stroke.Material = Enum.Material.Metal
-		stroke.Anchored = true
-		stroke.CanCollide = false
-		stroke.Parent = folder
-		stroke.Rotation = Vector3.new(0, 0, 35)
-		return
-	end
+	-- Lock bar that gets added when locked. Stored as a ref so we can
+	-- destroy it when the portal unlocks later.
+	local refs: PortalRefs = {
+		name = theme.name,
+		shimmer = shimmer,
+		stateLabel = stateLabel,
+		lockBar = nil,
+		active = false,
+	}
 
-	-- Active portal: wire up the touch handler
+	-- Touch handler is always connected. It delegates to `onTouched`
+	-- only when `refs.active` is true so we can lock/unlock at runtime
+	-- without rewiring signals.
 	local lastTouch: { [Player]: number } = {}
 	shimmer.Touched:Connect(function(hit)
+		if not refs.active then
+			return
+		end
 		local char = hit:FindFirstAncestorOfClass("Model")
 		if not char then
 			return
@@ -210,7 +235,6 @@ local function buildPortal(
 		if not player then
 			return
 		end
-		-- Debounce per player so the touch event doesn't fire dozens of times
 		local now = tick()
 		if lastTouch[player] and now - lastTouch[player] < 1.5 then
 			return
@@ -218,9 +242,48 @@ local function buildPortal(
 		lastTouch[player] = now
 		onTouched(player)
 	end)
+
+	return refs
 end
 
-function Lobby.build(arenaSpawnCFrame: CFrame, onEnterArena: (Player) -> ()): LobbyData
+-- Apply a locked/unlocked state to a portal. Unlocked: bright shimmer,
+-- "TOUCH TO ENTER" green label, no lock bar. Locked: dim shimmer, lock
+-- bar across the middle, gray "LOCKED — reach wave X in Y" label.
+local function applyPortalState(refs: PortalRefs, unlocked: boolean, requirementText: string?)
+	refs.active = unlocked
+	if unlocked then
+		refs.shimmer.Transparency = 0.3
+		refs.stateLabel.Text = "[ TOUCH TO ENTER ]"
+		refs.stateLabel.TextColor3 = Color3.fromRGB(120, 255, 140)
+		if refs.lockBar then
+			refs.lockBar:Destroy()
+			refs.lockBar = nil
+		end
+	else
+		refs.shimmer.Transparency = 0.78
+		refs.stateLabel.Text = requirementText or "[ LOCKED ]"
+		refs.stateLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+		if not refs.lockBar then
+			local bar = Instance.new("Part")
+			bar.Name = "LockBar"
+			bar.Size = Vector3.new(9, 0.9, 0.7)
+			bar.Anchored = true
+			bar.CanCollide = false
+			bar.TopSurface = Enum.SurfaceType.Smooth
+			bar.BottomSurface = Enum.SurfaceType.Smooth
+			bar.Color = Color3.fromRGB(40, 40, 40)
+			bar.Material = Enum.Material.Metal
+			bar.CFrame = refs.shimmer.CFrame * CFrame.Angles(0, 0, math.rad(30))
+			bar.Parent = refs.shimmer.Parent
+			refs.lockBar = bar
+		end
+	end
+end
+
+function Lobby.build(
+	onEnterRealm: (Player, string) -> (),
+	initialHighestWaves: { [string]: number }
+): LobbyData
 	local existing = workspace:FindFirstChild("Lobby")
 	if existing then
 		existing:Destroy()
@@ -237,9 +300,10 @@ function Lobby.build(arenaSpawnCFrame: CFrame, onEnterArena: (Player) -> ()): Lo
 	local rng = Random.new(42)
 
 	-- --- Round grass island ---
-	-- Main disc (Cylinder shape, rotated flat)
+	-- Main disc (Cylinder shape, rotated flat). Sized to host all 5 realm
+	-- portals along the north edge with room to walk around.
 	local island = makePart(folder, "Island", {
-		Size = Vector3.new(3, 110, 110),
+		Size = Vector3.new(3, 140, 140),
 		Position = Vector3.new(cx, cy - 1.5, cz),
 		Color = Color3.fromRGB(60, 130, 50),
 		Material = Enum.Material.Grass,
@@ -249,7 +313,7 @@ function Lobby.build(arenaSpawnCFrame: CFrame, onEnterArena: (Player) -> ()): Lo
 
 	-- Dirt underside that pokes out below the grass for a layered look
 	local dirt = makePart(folder, "Dirt", {
-		Size = Vector3.new(5, 115, 115),
+		Size = Vector3.new(5, 146, 146),
 		Position = Vector3.new(cx, cy - 4, cz),
 		Color = Color3.fromRGB(84, 58, 40),
 		Material = Enum.Material.Ground,
@@ -300,6 +364,49 @@ function Lobby.build(arenaSpawnCFrame: CFrame, onEnterArena: (Player) -> ()): Lo
 		})
 		rock.Orientation =
 			Vector3.new(rng:NextNumber(-15, 15), rng:NextNumber(0, 360), rng:NextNumber(-15, 15))
+	end
+
+	-- A handful of taller statement boulders a bit inward so the lobby
+	-- doesn't feel flat
+	local bigRockSpots = {
+		Vector3.new(cx - 32, 0, cz - 6),
+		Vector3.new(cx + 30, 0, cz - 4),
+		Vector3.new(cx - 18, 0, cz + 28),
+		Vector3.new(cx + 22, 0, cz + 26),
+		Vector3.new(cx - 38, 0, cz + 34),
+		Vector3.new(cx + 36, 0, cz + 36),
+	}
+	for i, spot in bigRockSpots do
+		local sx = rng:NextNumber(6, 10)
+		local sy = rng:NextNumber(6, 10)
+		local sz = rng:NextNumber(6, 10)
+		local rock = makePart(folder, "BigBoulder_" .. i, {
+			Size = Vector3.new(sx, sy, sz),
+			Position = Vector3.new(spot.X, cy + sy / 2 - 0.4, spot.Z),
+			Color = rockColors[rng:NextInteger(1, #rockColors)],
+			Material = Enum.Material.Rock,
+		})
+		rock.Orientation =
+			Vector3.new(rng:NextNumber(-18, 18), rng:NextNumber(0, 360), rng:NextNumber(-18, 18))
+
+		-- Pile a smaller rock next to each big one for a clustered look
+		local offA = rng:NextNumber() * math.pi * 2
+		local small = makePart(folder, "BigBoulderPile_" .. i, {
+			Size = Vector3.new(
+				rng:NextNumber(2.5, 4.2),
+				rng:NextNumber(2, 3.2),
+				rng:NextNumber(2.5, 4.2)
+			),
+			Position = Vector3.new(
+				spot.X + math.cos(offA) * (sx / 2 + 1.2),
+				cy + 1.1,
+				spot.Z + math.sin(offA) * (sz / 2 + 1.2)
+			),
+			Color = rockColors[rng:NextInteger(1, #rockColors)],
+			Material = Enum.Material.Rock,
+		})
+		small.Orientation =
+			Vector3.new(rng:NextNumber(-20, 20), rng:NextNumber(0, 360), rng:NextNumber(-20, 20))
 	end
 
 	-- --- Trees scattered around the platform edges ---
@@ -440,71 +547,180 @@ function Lobby.build(arenaSpawnCFrame: CFrame, onEnterArena: (Player) -> ()): Lo
 		})
 	end
 
+	-- --- Invisible containment walls around the island ---
+	local WALL_HALF = 75
+	local WALL_HEIGHT = 70
+	local WALL_THICKNESS = 2
+	local function makeInvisibleWall(name: string, size: Vector3, pos: Vector3)
+		local w = makePart(folder, name, {
+			Size = size,
+			Position = pos,
+			Color = Color3.fromRGB(0, 0, 0),
+			Material = Enum.Material.SmoothPlastic,
+			Transparency = 1,
+			CanCollide = true,
+		})
+		w.CanTouch = false
+		w.CanQuery = false
+		w.CastShadow = false
+	end
+	makeInvisibleWall(
+		"LobbyWallN",
+		Vector3.new(WALL_HALF * 2 + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS),
+		Vector3.new(cx, cy + WALL_HEIGHT / 2, cz - WALL_HALF)
+	)
+	makeInvisibleWall(
+		"LobbyWallS",
+		Vector3.new(WALL_HALF * 2 + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS),
+		Vector3.new(cx, cy + WALL_HEIGHT / 2, cz + WALL_HALF)
+	)
+	makeInvisibleWall(
+		"LobbyWallE",
+		Vector3.new(WALL_THICKNESS, WALL_HEIGHT, WALL_HALF * 2),
+		Vector3.new(cx + WALL_HALF, cy + WALL_HEIGHT / 2, cz)
+	)
+	makeInvisibleWall(
+		"LobbyWallW",
+		Vector3.new(WALL_THICKNESS, WALL_HEIGHT, WALL_HALF * 2),
+		Vector3.new(cx - WALL_HALF, cy + WALL_HEIGHT / 2, cz)
+	)
+
 	-- --- Portals along the north edge ---
 	local portalBaseZ = cz + PORTAL_ROW_Z_OFFSET
 	local numPortals = #THEMES
 	local firstX = cx - ((numPortals - 1) * PORTAL_SPACING) / 2
 
+	local portals: { PortalRefs } = {}
 	for i, theme in THEMES do
 		local portalCenter = Vector3.new(firstX + (i - 1) * PORTAL_SPACING, cy, portalBaseZ)
-		buildPortal(folder, theme, portalCenter, function(player)
-			local char = player.Character
-			if char then
-				char:PivotTo(arenaSpawnCFrame)
-				onEnterArena(player)
-			end
+		local realmName = theme.name
+		local refs = buildPortal(folder, theme, portalCenter, function(player)
+			onEnterRealm(player, realmName)
 		end)
+		table.insert(portals, refs)
+
+		local unlocked = RealmDefs.isUnlocked(realmName, initialHighestWaves)
+		local requirementText: string? = nil
+		if not unlocked then
+			local def = RealmDefs.get(realmName)
+			if def.unlockRequirement then
+				local req = def.unlockRequirement
+				local reqDef = RealmDefs.get(req.realm)
+				requirementText = string.format(
+					"[ REACH WAVE %d IN %s ]",
+					req.wave,
+					string.upper(reqDef.displayName)
+				)
+			end
+		end
+		applyPortalState(refs, unlocked, requirementText)
 	end
 
 	-- --- Wooden welcome signpost behind the spawn ---
+	-- Two short posts holding a horizontal board; the text is painted on
+	-- the board with a SurfaceGui so it sits flat on the wood instead of
+	-- floating as a billboard.
 	local signPostZ = cz + 32
-	makePart(folder, "SignPost", {
-		Size = Vector3.new(0.8, 10, 0.8),
-		Position = Vector3.new(cx, cy + 4.5, signPostZ),
+	local signBoardY = cy + 7
+	makePart(folder, "SignPostL", {
+		Size = Vector3.new(0.9, 7, 0.9),
+		Position = Vector3.new(cx - 6, cy + 3.5, signPostZ),
+		Color = Color3.fromRGB(88, 54, 32),
+		Material = Enum.Material.Wood,
+	})
+	makePart(folder, "SignPostR", {
+		Size = Vector3.new(0.9, 7, 0.9),
+		Position = Vector3.new(cx + 6, cy + 3.5, signPostZ),
 		Color = Color3.fromRGB(88, 54, 32),
 		Material = Enum.Material.Wood,
 	})
 	local signBoard = makePart(folder, "SignBoard", {
-		Size = Vector3.new(14, 4, 0.6),
-		Position = Vector3.new(cx, cy + 10, signPostZ),
+		Size = Vector3.new(16, 5, 0.6),
+		Position = Vector3.new(cx, signBoardY, signPostZ),
 		Color = Color3.fromRGB(120, 80, 46),
+		Material = Enum.Material.WoodPlanks,
+	})
+	-- A slightly darker trim so the board has a carved look
+	makePart(folder, "SignTrimTop", {
+		Size = Vector3.new(17, 0.6, 0.8),
+		Position = Vector3.new(cx, signBoardY + 2.6, signPostZ),
+		Color = Color3.fromRGB(78, 48, 28),
 		Material = Enum.Material.Wood,
 	})
-	local welcomeBillboard = Instance.new("BillboardGui")
-	welcomeBillboard.Size = UDim2.fromOffset(480, 80)
-	welcomeBillboard.StudsOffset = Vector3.new(0, 0, 0)
-	welcomeBillboard.LightInfluence = 0
-	welcomeBillboard.Adornee = signBoard
-	welcomeBillboard.Parent = signBoard
+	makePart(folder, "SignTrimBottom", {
+		Size = Vector3.new(17, 0.6, 0.8),
+		Position = Vector3.new(cx, signBoardY - 2.6, signPostZ),
+		Color = Color3.fromRGB(78, 48, 28),
+		Material = Enum.Material.Wood,
+	})
 
-	local welcomeLabel = Instance.new("TextLabel")
-	welcomeLabel.Size = UDim2.fromScale(1, 0.6)
-	welcomeLabel.BackgroundTransparency = 1
-	welcomeLabel.Text = "CHOOSE YOUR REALM"
-	welcomeLabel.Font = Enum.Font.GothamBlack
-	welcomeLabel.TextSize = 34
-	welcomeLabel.TextColor3 = Color3.fromRGB(255, 240, 200)
-	welcomeLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	welcomeLabel.TextStrokeTransparency = 0
-	welcomeLabel.Parent = welcomeBillboard
+	local function paintSignFace(face: Enum.NormalId)
+		local surface = Instance.new("SurfaceGui")
+		surface.Name = "SignFace_" .. face.Name
+		surface.Face = face
+		surface.CanvasSize = Vector2.new(640, 200)
+		surface.PixelsPerStud = 40
+		surface.LightInfluence = 0
+		surface.Adornee = signBoard
+		surface.Parent = signBoard
 
-	local welcomeSub = Instance.new("TextLabel")
-	welcomeSub.Size = UDim2.fromScale(1, 0.4)
-	welcomeSub.Position = UDim2.fromScale(0, 0.6)
-	welcomeSub.BackgroundTransparency = 1
-	welcomeSub.Text = "Walk into a portal to begin"
-	welcomeSub.Font = Enum.Font.GothamMedium
-	welcomeSub.TextSize = 17
-	welcomeSub.TextColor3 = Color3.fromRGB(230, 210, 170)
-	welcomeSub.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	welcomeSub.TextStrokeTransparency = 0
-	welcomeSub.Parent = welcomeBillboard
+		local title = Instance.new("TextLabel")
+		title.Size = UDim2.fromScale(1, 0.6)
+		title.Position = UDim2.fromScale(0, 0.05)
+		title.BackgroundTransparency = 1
+		title.Text = "CHOOSE YOUR REALM"
+		title.Font = Enum.Font.GothamBlack
+		title.TextScaled = true
+		title.TextColor3 = Color3.fromRGB(255, 240, 200)
+		title.TextStrokeColor3 = Color3.fromRGB(40, 20, 8)
+		title.TextStrokeTransparency = 0
+		title.Parent = surface
+
+		local sub = Instance.new("TextLabel")
+		sub.Size = UDim2.fromScale(1, 0.3)
+		sub.Position = UDim2.fromScale(0, 0.65)
+		sub.BackgroundTransparency = 1
+		sub.Text = "Walk into a portal to begin"
+		sub.Font = Enum.Font.GothamMedium
+		sub.TextScaled = true
+		sub.TextColor3 = Color3.fromRGB(235, 210, 170)
+		sub.TextStrokeColor3 = Color3.fromRGB(40, 20, 8)
+		sub.TextStrokeTransparency = 0
+		sub.Parent = surface
+	end
+	-- Paint both faces so the sign is readable from either side
+	paintSignFace(Enum.NormalId.Front)
+	paintSignFace(Enum.NormalId.Back)
 
 	local spawnCFrame = CFrame.new(LOBBY_CENTER + SPAWN_OFFSET) * CFrame.Angles(0, math.pi, 0) -- face the portals
 	return {
 		folder = folder,
 		spawnCFrame = spawnCFrame,
+		portals = portals,
 	}
+end
+
+-- Re-evaluate every portal in the given LobbyData against the current
+-- highestWaves table. Called whenever a wave completes on the server so
+-- newly unlocked portals visually update immediately.
+function Lobby.refreshUnlocks(data: LobbyData, highestWaves: { [string]: number })
+	for _, refs in data.portals do
+		local unlocked = RealmDefs.isUnlocked(refs.name, highestWaves)
+		local requirementText: string? = nil
+		if not unlocked then
+			local def = RealmDefs.get(refs.name)
+			if def.unlockRequirement then
+				local req = def.unlockRequirement
+				local reqDef = RealmDefs.get(req.realm)
+				requirementText = string.format(
+					"[ REACH WAVE %d IN %s ]",
+					req.wave,
+					string.upper(reqDef.displayName)
+				)
+			end
+		end
+		applyPortalState(refs, unlocked, requirementText)
+	end
 end
 
 return Lobby

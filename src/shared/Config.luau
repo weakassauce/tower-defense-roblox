@@ -10,7 +10,9 @@ Config.CELL_SIZE = 8 -- Roblox studs per grid cell (was 2 in Three.js)
 Config.HALF_GRID = (Config.GRID_SIZE * Config.CELL_SIZE) / 2
 
 -- The path enemies walk along, as (gx, gy) grid coordinates.
--- Identical to the JS version so the layout matches.
+-- This is a MUTABLE "current path": `Config.setCurrentPath(newPath)`
+-- swaps it when the player enters a different realm. The default is the
+-- Realm Defense path; RealmDefs.luau owns the per-realm path tables.
 Config.PATH = {
 	{ 0, 2 },
 	{ 1, 2 },
@@ -65,14 +67,26 @@ function Config.worldToGrid(wx: number, wz: number): (number, number)
 	return gx, gy
 end
 
--- Quick lookup set for path cells.
+-- Quick lookup set for path cells. Rebuilt by setCurrentPath.
 local pathSet: { [string]: boolean } = {}
-for _, pair in Config.PATH do
-	pathSet[pair[1] .. "," .. pair[2]] = true
+local function rebuildPathSet()
+	pathSet = {}
+	for _, pair in Config.PATH do
+		pathSet[pair[1] .. "," .. pair[2]] = true
+	end
 end
+rebuildPathSet()
 
 function Config.isPath(gx: number, gy: number): boolean
 	return pathSet[gx .. "," .. gy] == true
+end
+
+-- Swap the active path. Called on both server (in buildArena) and client
+-- (in the EnterRealm handler) so tower placement validation uses the
+-- current realm's path, not a stale one from a previously visited realm.
+function Config.setCurrentPath(path: { { number } })
+	Config.PATH = path
+	rebuildPathSet()
 end
 
 -- Initial game state

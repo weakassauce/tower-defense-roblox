@@ -8,5 +8,7 @@ local Shared = {}
 Shared.Config = require(script.Config)
 Shared.TowerDefs = require(script.TowerDefs)
 Shared.WaveConfig = require(script.WaveConfig)
+Shared.RealmDefs = require(script.RealmDefs)
+Shared.Guns = require(script.Guns)
 
 return Shared

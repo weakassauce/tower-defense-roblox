@@ -14,10 +14,14 @@ local WaveController = {}
 
 type SpawnEntry = {
 	enemyType: string,
+	silhouette: string,
+	flourish: string,
+	realm: string,
 	hp: number,
 	speed: number,
 	reward: number,
 	color: Color3,
+	accentColor: Color3,
 	scale: number,
 }
 
@@ -33,7 +37,7 @@ function WaveController.startWave(): boolean
 
 	GameState.nextWave()
 
-	local waveCfg = WaveConfig.get(state.waveNum)
+	local waveCfg = WaveConfig.get(state.realm, state.waveNum)
 	spawnInterval = waveCfg.spawnInterval
 	spawnTimer = 0
 	spawnQueue = {}
@@ -42,10 +46,14 @@ function WaveController.startWave(): boolean
 		for _ = 1, group.count do
 			table.insert(spawnQueue, {
 				enemyType = group.enemyType,
+				silhouette = group.silhouette,
+				flourish = group.flourish,
+				realm = group.realm,
 				hp = group.hp,
 				speed = group.speed,
 				reward = group.reward,
 				color = group.color,
+				accentColor = group.accentColor,
 				scale = group.scale,
 			})
 		end
@@ -73,10 +81,14 @@ function WaveController.update(dt: number): number
 			local entry = table.remove(spawnQueue, 1) :: SpawnEntry
 			EnemyManager.spawn({
 				enemyType = entry.enemyType,
+				silhouette = entry.silhouette,
+				flourish = entry.flourish,
+				realm = entry.realm,
 				hp = entry.hp,
 				speed = entry.speed,
 				reward = entry.reward,
 				color = entry.color,
+				accentColor = entry.accentColor,
 				scale = entry.scale,
 			})
 			spawnTimer = spawnInterval

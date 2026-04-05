@@ -473,6 +473,224 @@ local function buildInferno(model: Model, def: TowerDefs.TowerDef, pos: Vector3)
 	return flame
 end
 
+-- --- Realm signature towers ---
+
+local function buildPaladin(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	-- Defense realm: a golden fortress with a sun banner and crowned keep.
+	local cx, cz = pos.X, pos.Z
+	local stone = Color3.fromRGB(200, 170, 110)
+	local stoneDark = Color3.fromRGB(120, 95, 50)
+	makeBlock(
+		model,
+		"Base",
+		Vector3.new(7, 1.5, 7),
+		CFrame.new(cx, 0.75, cz),
+		stoneDark,
+		Enum.Material.Slate
+	)
+	makeBlock(
+		model,
+		"Keep",
+		Vector3.new(5, 9, 5),
+		CFrame.new(cx, 6, cz),
+		stone,
+		Enum.Material.Marble
+	)
+	-- Crowned battlements
+	for _, o in { { -1.8, -1.8 }, { 1.8, -1.8 }, { -1.8, 1.8 }, { 1.8, 1.8 } } do
+		makeBlock(
+			model,
+			"Cren",
+			Vector3.new(1.3, 1.6, 1.3),
+			CFrame.new(cx + o[1], 11.3, cz + o[2]),
+			stoneDark,
+			Enum.Material.Marble
+		)
+	end
+	-- Sun banner hanging on the front
+	makeBlock(
+		model,
+		"Banner",
+		Vector3.new(2.6, 3.4, 0.15),
+		CFrame.new(cx, 6.5, cz - 2.6),
+		def.accent,
+		Enum.Material.Fabric
+	)
+	local sun =
+		makeSphere(model, "Sun", 1.4, Vector3.new(cx, 12.6, cz), def.accent, Enum.Material.Neon)
+	addPointLight(sun, def.accent, 12, 2)
+	return sun
+end
+
+local function buildIcelance(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	-- Frost realm: a tall glassy lance spire on a frozen disc.
+	local cx, cz = pos.X, pos.Z
+	local ice = Color3.fromRGB(179, 229, 252)
+	makeCylinder(
+		model,
+		"Base",
+		7,
+		1.4,
+		CFrame.new(cx, 0.7, cz),
+		Color3.fromRGB(144, 164, 174),
+		Enum.Material.Ice
+	)
+	makeCylinder(model, "Rim", 7.4, 0.4, CFrame.new(cx, 1.6, cz), ice, Enum.Material.Ice)
+	-- Outer crystal ring
+	for i = 0, 5 do
+		local angle = (i / 6) * math.pi * 2
+		local sx = cx + math.cos(angle) * 2.4
+		local sz = cz + math.sin(angle) * 2.4
+		local shard = makeBlock(
+			model,
+			"Shard" .. i,
+			Vector3.new(0.9, 4 + (i % 2) * 1.2, 0.9),
+			CFrame.new(sx, 3.8, sz) * CFrame.Angles(math.rad(5), 0, math.rad(5)),
+			ice,
+			Enum.Material.Glass
+		)
+		shard.Transparency = 0.2
+	end
+	-- Central lance
+	local lance = makeBlock(
+		model,
+		"Lance",
+		Vector3.new(1.2, 12, 1.2),
+		CFrame.new(cx, 8, cz),
+		def.color,
+		Enum.Material.Glass
+	)
+	lance.Transparency = 0.1
+	addPointLight(lance, def.color, 14, 1.8)
+	-- Tip
+	makeSphere(model, "Tip", 1.2, Vector3.new(cx, 14.4, cz), def.accent, Enum.Material.Neon)
+	return lance
+end
+
+local function buildSandstorm(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	-- Desert realm: sandstone ziggurat with a swirling dust orb on top.
+	local cx, cz = pos.X, pos.Z
+	local sand = Color3.fromRGB(215, 175, 110)
+	local sandDark = Color3.fromRGB(150, 115, 70)
+	makeBlock(
+		model,
+		"Step1",
+		Vector3.new(7, 2, 7),
+		CFrame.new(cx, 1, cz),
+		sandDark,
+		Enum.Material.Sandstone
+	)
+	makeBlock(
+		model,
+		"Step2",
+		Vector3.new(5.4, 2, 5.4),
+		CFrame.new(cx, 3, cz),
+		sand,
+		Enum.Material.Sandstone
+	)
+	makeBlock(
+		model,
+		"Step3",
+		Vector3.new(3.8, 2, 3.8),
+		CFrame.new(cx, 5, cz),
+		sandDark,
+		Enum.Material.Sandstone
+	)
+	-- Central obelisk
+	makeBlock(
+		model,
+		"Obelisk",
+		Vector3.new(1.6, 4.6, 1.6),
+		CFrame.new(cx, 8.3, cz),
+		sand,
+		Enum.Material.Sandstone
+	)
+	-- Swirling dust orb
+	local orb =
+		makeSphere(model, "DustOrb", 2.8, Vector3.new(cx, 11.6, cz), def.accent, Enum.Material.Neon)
+	addPointLight(orb, def.accent, 12, 1.6)
+	-- Ring of smaller particles around the orb
+	for i = 0, 5 do
+		local angle = (i / 6) * math.pi * 2
+		local sx = cx + math.cos(angle) * 2.4
+		local sz = cz + math.sin(angle) * 2.4
+		makeSphere(
+			model,
+			"Dust" .. i,
+			0.6,
+			Vector3.new(sx, 11.6, sz),
+			def.accent,
+			Enum.Material.Neon
+		)
+	end
+	return orb
+end
+
+local function buildThornwall(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	-- Forest realm: a ring of thorn pillars with a glowing heart vine.
+	local cx, cz = pos.X, pos.Z
+	local bark = Color3.fromRGB(60, 40, 25)
+	local leaf = Color3.fromRGB(46, 125, 50)
+	makeCylinder(model, "Stump", 7, 1.6, CFrame.new(cx, 0.8, cz), bark, Enum.Material.Wood)
+	makeCylinder(model, "Moss", 7.3, 0.5, CFrame.new(cx, 1.7, cz), leaf, Enum.Material.LeafyGrass)
+	-- Thorn pillars in a ring, tilted outward
+	for i = 0, 7 do
+		local angle = (i / 8) * math.pi * 2
+		local sx = cx + math.cos(angle) * 2.5
+		local sz = cz + math.sin(angle) * 2.5
+		local thorn = makeBlock(
+			model,
+			"Thorn" .. i,
+			Vector3.new(0.8, 5 + (i % 2) * 1.2, 0.8),
+			CFrame.new(sx, 4.6, sz)
+				* CFrame.Angles(math.rad(math.sin(angle) * 12), 0, math.rad(math.cos(angle) * 12)),
+			bark,
+			Enum.Material.Wood
+		)
+		thorn.Color = bark
+	end
+	-- Central heart-vine ball
+	local heart =
+		makeSphere(model, "Heart", 3.4, Vector3.new(cx, 6.8, cz), def.accent, Enum.Material.Neon)
+	addPointLight(heart, def.accent, 12, 1.6)
+	-- Leafy canopy over the heart
+	makeSphere(model, "Canopy", 4.6, Vector3.new(cx, 9, cz), leaf, Enum.Material.LeafyGrass)
+	return heart
+end
+
+local function buildPlasma(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	-- Space realm: a chrome disc base + floating plasma core held between fins.
+	local cx, cz = pos.X, pos.Z
+	local chrome = Color3.fromRGB(120, 130, 170)
+	local dark = Color3.fromRGB(45, 40, 70)
+	makeCylinder(model, "Base", 7, 1.2, CFrame.new(cx, 0.6, cz), dark, Enum.Material.Metal)
+	makeCylinder(model, "Disc", 6.2, 0.5, CFrame.new(cx, 1.4, cz), chrome, Enum.Material.Metal)
+	-- Three vertical fins
+	for i = 0, 2 do
+		local angle = (i / 3) * math.pi * 2
+		local sx = cx + math.cos(angle) * 1.8
+		local sz = cz + math.sin(angle) * 1.8
+		local fin = makeBlock(
+			model,
+			"Fin" .. i,
+			Vector3.new(0.6, 6.5, 2.4),
+			CFrame.new(sx, 5.2, sz) * CFrame.Angles(0, angle + math.pi / 2, 0),
+			chrome,
+			Enum.Material.Metal
+		)
+		fin.Color = chrome
+	end
+	-- Hovering plasma core
+	local core =
+		makeSphere(model, "Core", 2.8, Vector3.new(cx, 6, cz), def.accent, Enum.Material.Neon)
+	addPointLight(core, def.accent, 16, 2.5)
+	-- Outer halo ring (cylinder mesh scaled flat)
+	local halo =
+		makeCylinder(model, "Halo", 5, 0.25, CFrame.new(cx, 6, cz), def.color, Enum.Material.Neon)
+	halo.Transparency = 0.3
+	return core
+end
+
 local TOWER_BUILDERS: { [string]: (Model, TowerDefs.TowerDef, Vector3) -> Part } = {
 	basic = buildArcher,
 	sniper = buildWizard,
@@ -481,6 +699,11 @@ local TOWER_BUILDERS: { [string]: (Model, TowerDefs.TowerDef, Vector3) -> Part }
 	lightning = buildStorm,
 	poison = buildAlchemist,
 	flame = buildInferno,
+	paladin = buildPaladin,
+	icelance = buildIcelance,
+	sandstorm = buildSandstorm,
+	thornwall = buildThornwall,
+	plasma = buildPlasma,
 }
 
 local function buildTowerModel(
@@ -634,20 +857,25 @@ local function updateProjectiles(dt: number)
 			-- Hit
 			local def = p.tower.def
 
+			-- Cannon tower kills now play the gentler "basic" flop
+			-- death animation; the physics-explosion death is reserved
+			-- for gun kills (fired by the player), which pass the
+			-- "cannon" killer type explicitly from the FireGun handler.
+			local killerType = p.tower.towerType
+			if killerType == "cannon" then
+				killerType = "basic"
+			end
+
 			if def.splash > 0 then
 				for _, enemy in EnemyManager.getAlive() do
 					local d = (enemy.root.Position - targetPos).Magnitude
 					if d <= def.splash then
 						local falloff = 1 - (d / def.splash) * 0.5
-						EnemyManager.damage(
-							enemy,
-							math.floor(def.damage * falloff),
-							p.tower.towerType
-						)
+						EnemyManager.damage(enemy, math.floor(def.damage * falloff), killerType)
 					end
 				end
 			else
-				EnemyManager.damage(p.target, def.damage, p.tower.towerType)
+				EnemyManager.damage(p.target, def.damage, killerType)
 			end
 
 			if def.slowFactor and p.target.alive then
@@ -712,6 +940,30 @@ function TowerManager.clear()
 	end
 	towers = {}
 	projectiles = {}
+end
+
+-- Return a minimal serializable list of every placed tower so the
+-- GameState can persist the layout when the player leaves a realm.
+export type TowerSnapshot = { gx: number, gy: number, towerType: string }
+
+function TowerManager.snapshot(): { TowerSnapshot }
+	local out: { TowerSnapshot } = {}
+	for _, t in towers do
+		table.insert(out, { gx = t.gx, gy = t.gy, towerType = t.towerType })
+	end
+	return out
+end
+
+-- Rebuild towers from a snapshot (called on realm re-entry). Skips
+-- towers whose type no longer exists (e.g. stale data after a content
+-- update). Does NOT charge gold — that was paid when the towers were
+-- originally placed.
+function TowerManager.restoreFrom(snapshots: { TowerSnapshot })
+	for _, snap in snapshots do
+		if TowerDefs[snap.towerType] then
+			TowerManager.place(snap.gx, snap.gy, snap.towerType)
+		end
+	end
 end
 
 return TowerManager

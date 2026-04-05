@@ -131,6 +131,88 @@ local TowerDefs: { [string]: TowerDef } = {
 		projectileColor = Color3.fromRGB(255, 110, 64),
 		splash = 1.5 * SCALE,
 	},
+
+	-- --- Realm signature towers ---
+	-- Each realm has exactly one exclusive tower that only becomes
+	-- buildable when the player is inside that realm.
+
+	paladin = {
+		name = "Paladin Hall", -- signature tower: Realm Defense
+		icon = "🛡️",
+		cost = 160,
+		range = 6 * SCALE,
+		damage = 55,
+		fireRate = 0.55,
+		color = Color3.fromRGB(230, 200, 130),
+		accent = Color3.fromRGB(255, 236, 179),
+		projectileSpeed = 40 * SCALE,
+		projectileColor = Color3.fromRGB(255, 247, 200),
+		splash = 2.2 * SCALE,
+	},
+	icelance = {
+		name = "Ice Lance", -- signature tower: Frost Kingdom
+		icon = "🧊",
+		cost = 140,
+		range = 9 * SCALE,
+		damage = 34,
+		fireRate = 0.7,
+		color = Color3.fromRGB(129, 212, 250),
+		accent = Color3.fromRGB(225, 245, 254),
+		projectileSpeed = 75 * SCALE,
+		projectileColor = Color3.fromRGB(225, 245, 254),
+		splash = 0,
+		slowFactor = 0.3,
+		slowDuration = 3,
+	},
+	sandstorm = {
+		name = "Sandstorm Caster", -- signature tower: Desert Wastes
+		icon = "🌪️",
+		cost = 150,
+		range = 6 * SCALE,
+		damage = 10,
+		fireRate = 1.4,
+		color = Color3.fromRGB(200, 160, 80),
+		accent = Color3.fromRGB(255, 213, 79),
+		projectileSpeed = 28 * SCALE,
+		projectileColor = Color3.fromRGB(255, 224, 130),
+		splash = 2.5 * SCALE,
+		slowFactor = 0.55,
+		slowDuration = 2,
+		poisonDps = 6,
+		poisonDuration = 3,
+	},
+	thornwall = {
+		name = "Thornwall Druid", -- signature tower: Dark Forest
+		icon = "🌿",
+		cost = 145,
+		range = 7 * SCALE,
+		damage = 22,
+		fireRate = 0.9,
+		color = Color3.fromRGB(85, 139, 47),
+		accent = Color3.fromRGB(174, 234, 0),
+		projectileSpeed = 40 * SCALE,
+		projectileColor = Color3.fromRGB(174, 234, 0),
+		splash = 0,
+		poisonDps = 8,
+		poisonDuration = 4,
+		chain = 3,
+		chainRange = 4 * SCALE,
+	},
+	plasma = {
+		name = "Plasma Cannon", -- signature tower: Void Frontier
+		icon = "🛸",
+		cost = 170,
+		range = 8 * SCALE,
+		damage = 42,
+		fireRate = 1,
+		color = Color3.fromRGB(120, 80, 220),
+		accent = Color3.fromRGB(255, 100, 240),
+		projectileSpeed = 90 * SCALE,
+		projectileColor = Color3.fromRGB(230, 120, 255),
+		splash = 1.8 * SCALE,
+		chain = 2,
+		chainRange = 3 * SCALE,
+	},
 }
 
 return TowerDefs

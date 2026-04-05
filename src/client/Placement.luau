@@ -26,6 +26,10 @@ local camera = workspace.CurrentCamera
 -- Players spawn in the lobby, so start in character-follow (explore) mode
 local mode: Mode = "explore"
 local enabled = false
+-- When true, the camera is locked to character-follow and both the C
+-- keybind and the on-screen camera toggle are no-ops. Flipped by the
+-- enterLobbyMode / enterArenaMode helpers.
+local cameraLocked = true
 
 -- When set, the RenderStepped loop uses this CFrame every frame instead of
 -- the normal overview/explore logic. Used by the castle-destroyed cinematic.
@@ -46,14 +50,16 @@ local OVERVIEW_TARGET = Vector3.new(0, 0, 0)
 
 -- --- Helpers ---
 
+-- Re-fetch cached Map.Cells and Towers folders if the cached refs have
+-- been destroyed. This happens whenever the server rebuilds the arena
+-- (realm switch), and without this guard the client keeps raycasting
+-- against parent-less instances and placement silently fails.
 local function ensureWorkspaceFolders()
-	if not cellsFolder then
+	if not cellsFolder or cellsFolder.Parent == nil then
 		local map = workspace:FindFirstChild("Map")
-		if map then
-			cellsFolder = map:FindFirstChild("Cells") :: Folder?
-		end
+		cellsFolder = if map then map:FindFirstChild("Cells") :: Folder? else nil
 	end
-	if not towersFolder then
+	if not towersFolder or towersFolder.Parent == nil then
 		towersFolder = workspace:FindFirstChild("Towers") :: Folder?
 	end
 end
@@ -237,23 +243,43 @@ function Placement.cinematicRelease()
 	lerpStartCFrame = nil
 end
 
+-- Flip between overview and explore modes. Shared by the C keybind and
+-- the on-screen camera toggle button. No-op while the camera is locked
+-- (e.g. in the lobby, where the player is forced into character view).
+function Placement.toggleCameraMode()
+	if cameraLocked then
+		return
+	end
+	if mode == "overview" then
+		mode = "explore"
+		applyExploreCamera()
+	else
+		mode = "overview"
+		applyOverviewCamera()
+	end
+end
+
 -- Sets character follow as the active camera mode (used for walking
--- around the lobby).
+-- around the lobby). The lobby always forces follow-cam, so the camera
+-- lock is enabled here.
 function Placement.enterLobbyMode()
 	cinematicCFrame = nil
 	lerpStartCFrame = nil
 	mode = "explore"
 	camera.CameraType = Enum.CameraType.Custom
+	cameraLocked = true
 end
 
 -- Sets the top-down overview camera (used when the player touches the
--- Realm Defense portal).
+-- Realm Defense portal). Unlocks the camera toggle so the player can
+-- flip to explore if they want.
 function Placement.enterArenaMode()
 	cinematicCFrame = nil
 	lerpStartCFrame = nil
 	mode = "overview"
 	camera.CameraType = Enum.CameraType.Scriptable
 	camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
+	cameraLocked = false
 end
 
 function Placement.init()
@@ -268,13 +294,7 @@ function Placement.init()
 		if inputState ~= Enum.UserInputState.Begin then
 			return Enum.ContextActionResult.Pass
 		end
-		if mode == "overview" then
-			mode = "explore"
-			applyExploreCamera()
-		else
-			mode = "overview"
-			applyOverviewCamera()
-		end
+		Placement.toggleCameraMode()
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.KeyCode.C)
 
@@ -330,17 +350,36 @@ function Placement.init()
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
 			local sel = Hud.getSelection()
-			if not TowerDefs[sel.towerType] then
-				return -- nothing selected
-			end
-			local gx, gy = getCellUnderMouse()
-			if gx and gy then
-				if sel.fromInventoryIndex >= 0 then
-					Remotes.PlaceFromInventory:FireServer(sel.fromInventoryIndex, gx, gy)
-				else
-					Remotes.PlaceTower:FireServer(gx, gy, sel.towerType)
+			if TowerDefs[sel.towerType] then
+				-- A tower is selected → left click places it.
+				local gx, gy = getCellUnderMouse()
+				if gx and gy then
+					if sel.fromInventoryIndex >= 0 then
+						Remotes.PlaceFromInventory:FireServer(sel.fromInventoryIndex, gx, gy)
+					else
+						Remotes.PlaceTower:FireServer(gx, gy, sel.towerType)
+					end
 				end
+				return
 			end
+			-- No tower selected → if a gun is equipped, fire it at the
+			-- point under the mouse. The server validates range, fire
+			-- rate, and which enemy (if any) was actually hit.
+			local gunKey = Hud.getEquippedGun()
+			if not gunKey then
+				return
+			end
+			local mousePos = UserInputService:GetMouseLocation()
+			local ray = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			local char = Players.LocalPlayer.Character
+			if char then
+				params.FilterDescendantsInstances = { char, preview, previewRange }
+			end
+			local result = workspace:Raycast(ray.Origin, ray.Direction * 500, params)
+			local targetPos = if result then result.Position else ray.Origin + ray.Direction * 500
+			Remotes.FireGun:FireServer(targetPos)
 		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
 			local gx, gy = getTowerUnderMouse()
 			if gx and gy then

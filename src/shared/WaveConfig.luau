@@ -1,15 +1,23 @@
 --!strict
 -- src/shared/WaveConfig.luau
--- Wave scaling and enemy group generation. Ported from getWaveConfig in
--- config.js.
+-- Wave scaling and enemy group generation. Realm-aware — pulls enemy
+-- archetype data (name, color, stats multipliers) from RealmDefs so
+-- different realms spawn different themed enemies.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RealmDefs = require(ReplicatedStorage.Shared.RealmDefs)
 
 export type EnemyGroup = {
 	count: number,
-	enemyType: string, -- "goblin" | "scout" | "troll"
+	enemyType: string,
+	silhouette: string,
+	flourish: string,
+	realm: string,
 	hp: number,
-	speed: number, -- studs per second
+	speed: number,
 	reward: number,
 	color: Color3,
+	accentColor: Color3,
 	scale: number,
 }
 
@@ -24,7 +32,9 @@ local WaveConfig = {}
 -- are scaled up 4x to traverse the grid at the same apparent pace.
 local SPEED_SCALE = 4
 
-function WaveConfig.get(waveNum: number): WaveConfig
+function WaveConfig.get(realmName: string, waveNum: number): WaveConfig
+	local realm = RealmDefs.get(realmName)
+
 	local baseCount = 3 + math.floor(waveNum * 1.5)
 	local baseHP = 18 + waveNum * 12
 	local baseSpeed = (2.5 + math.min(waveNum * 0.15, 2.5)) * SPEED_SCALE
@@ -32,37 +42,52 @@ function WaveConfig.get(waveNum: number): WaveConfig
 
 	local enemies: { EnemyGroup } = {}
 
+	local small = realm.small
 	table.insert(enemies, {
 		count = baseCount,
-		enemyType = "goblin",
-		hp = baseHP,
-		speed = baseSpeed,
-		reward = reward,
-		color = Color3.fromRGB(85, 139, 47),
-		scale = 0.65,
+		enemyType = small.enemyType,
+		silhouette = small.silhouette,
+		flourish = small.flourish,
+		realm = realm.name,
+		hp = math.floor(baseHP * small.hpMult),
+		speed = baseSpeed * small.speedMult,
+		reward = math.max(1, math.floor(reward * small.rewardMult)),
+		color = small.bodyColor,
+		accentColor = small.accentColor,
+		scale = small.scale,
 	})
 
 	if waveNum >= 4 then
+		local fast = realm.fast
 		table.insert(enemies, {
 			count = math.floor(baseCount * 0.5),
-			enemyType = "scout",
-			hp = math.floor(baseHP * 0.5),
-			speed = baseSpeed * 1.6,
-			reward = reward + 2,
-			color = Color3.fromRGB(251, 192, 45),
-			scale = 0.55,
+			enemyType = fast.enemyType,
+			silhouette = fast.silhouette,
+			flourish = fast.flourish,
+			realm = realm.name,
+			hp = math.floor(baseHP * fast.hpMult),
+			speed = baseSpeed * fast.speedMult,
+			reward = math.max(1, math.floor(reward * fast.rewardMult)) + 2,
+			color = fast.bodyColor,
+			accentColor = fast.accentColor,
+			scale = fast.scale,
 		})
 	end
 
 	if waveNum >= 7 then
+		local tank = realm.tank
 		table.insert(enemies, {
 			count = math.max(1, math.floor((waveNum - 5) / 2)),
-			enemyType = "troll",
-			hp = baseHP * 3,
-			speed = baseSpeed * 0.55,
-			reward = reward * 3,
-			color = Color3.fromRGB(106, 27, 154),
-			scale = 0.95,
+			enemyType = tank.enemyType,
+			silhouette = tank.silhouette,
+			flourish = tank.flourish,
+			realm = realm.name,
+			hp = math.floor(baseHP * tank.hpMult),
+			speed = baseSpeed * tank.speedMult,
+			reward = math.max(1, math.floor(reward * tank.rewardMult)),
+			color = tank.bodyColor,
+			accentColor = tank.accentColor,
+			scale = tank.scale,
 		})
 	end
 

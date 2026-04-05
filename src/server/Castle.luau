@@ -13,10 +13,17 @@ local hpText: TextLabel? = nil
 local bodyParts: { Part } = {}
 local originalColors: { [Part]: Color3 } = {}
 
-local STONE = Color3.fromRGB(150, 145, 135)
-local STONE_DARK = Color3.fromRGB(95, 90, 82)
+-- Default palette (Realm Defense). Realms override via Castle.build(pos,
+-- maxHp, palette).
+local DEFAULT_STONE = Color3.fromRGB(150, 145, 135)
+local DEFAULT_STONE_DARK = Color3.fromRGB(95, 90, 82)
 local ROOF = Color3.fromRGB(120, 40, 35)
 local WOOD = Color3.fromRGB(78, 52, 36)
+
+export type CastlePalette = {
+	stone: Color3,
+	stoneDark: Color3,
+}
 
 local function makeBlock(
 	parent: Instance,
@@ -49,7 +56,9 @@ end
 -- Builds the castle centered at `pos` (Vector3 in world space). Returns
 -- the list of extra waypoints that extend the enemy path into the castle
 -- interior (so enemies visually walk into the gate before dying).
-function Castle.build(pos: Vector3, maxHp: number): { Vector3 }
+function Castle.build(pos: Vector3, maxHp: number, palette: CastlePalette?): { Vector3 }
+	local STONE = (palette and palette.stone) or DEFAULT_STONE
+	local STONE_DARK = (palette and palette.stoneDark) or DEFAULT_STONE_DARK
 	-- Fresh folder each time
 	local existing = workspace:FindFirstChild("Castle")
 	if existing then
@@ -191,6 +200,9 @@ function Castle.build(pos: Vector3, maxHp: number): { Vector3 }
 	billboard.StudsOffset = Vector3.new(0, 14, 0)
 	billboard.AlwaysOnTop = true
 	billboard.LightInfluence = 0
+	-- Hide from the distant lobby so you don't see a floating HP bar
+	-- across the skybox.
+	billboard.MaxDistance = 220
 	billboard.Parent = keep
 
 	local title = Instance.new("TextLabel")

@@ -8,6 +8,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = require(ReplicatedStorage.Shared)
 local Config = Shared.Config
+local RealmDefs = Shared.RealmDefs
 
 local Map = {}
 
@@ -17,13 +18,6 @@ export type MapData = {
 	waypoints: { Vector3 },
 	castleCenter: Vector3,
 }
-
--- Colors
-local COLOR_GROUND = Color3.fromRGB(46, 85, 34)
-local COLOR_GRASS = Color3.fromRGB(67, 160, 71)
-local COLOR_PATH = Color3.fromRGB(141, 110, 99)
-local COLOR_WALL = Color3.fromRGB(97, 97, 97)
-local COLOR_WALL_DARK = Color3.fromRGB(66, 66, 66)
 
 -- Castle geometry (must match Castle.luau)
 local CASTLE_OFFSET_X = 15
@@ -41,11 +35,21 @@ local function makePart(parent: Instance, name: string): Part
 	return p
 end
 
-function Map.build(): MapData
+function Map.build(realmName: string?): MapData
 	local existing = workspace:FindFirstChild("Map")
 	if existing then
 		existing:Destroy()
 	end
+
+	local palette = RealmDefs.get(realmName or "defense").palette
+
+	-- Local aliases so the existing builder code only differs from the
+	-- original by reading these locals instead of module constants.
+	local COLOR_GROUND = palette.ground
+	local COLOR_GRASS = palette.grass
+	local COLOR_PATH = palette.path
+	local COLOR_WALL = palette.wall
+	local COLOR_WALL_DARK = palette.wallDark
 
 	local mapFolder = Instance.new("Folder")
 	mapFolder.Name = "Map"
@@ -66,7 +70,7 @@ function Map.build(): MapData
 	ground.Size = Vector3.new(groundSize, 2, groundSize)
 	ground.Position = Vector3.new(0, -1, 0)
 	ground.Color = COLOR_GROUND
-	ground.Material = Enum.Material.Grass
+	ground.Material = palette.groundMaterial
 
 	-- --- Grid cells ---
 	local cells = Instance.new("Folder")
@@ -84,10 +88,10 @@ function Map.build(): MapData
 			local isPath = Config.isPath(gx, gy)
 			if isPath then
 				cell.Color = COLOR_PATH
-				cell.Material = Enum.Material.Slate
+				cell.Material = palette.pathMaterial
 			else
 				cell.Color = COLOR_GRASS
-				cell.Material = Enum.Material.Grass
+				cell.Material = palette.grassMaterial
 			end
 
 			cell:SetAttribute("gx", gx)
@@ -403,23 +407,10 @@ function Map.build(): MapData
 		end
 	end
 
-	local TRUNK_COLOR = Color3.fromRGB(82, 52, 36)
-	local CANOPY_COLORS = {
-		Color3.fromRGB(27, 94, 32),
-		Color3.fromRGB(33, 113, 39),
-		Color3.fromRGB(46, 125, 50),
-		Color3.fromRGB(20, 82, 28),
-	}
-	local BUSH_COLORS = {
-		Color3.fromRGB(56, 142, 60),
-		Color3.fromRGB(67, 160, 71),
-		Color3.fromRGB(46, 125, 50),
-	}
-	local ROCK_COLORS = {
-		Color3.fromRGB(117, 117, 117),
-		Color3.fromRGB(97, 97, 97),
-		Color3.fromRGB(78, 78, 78),
-	}
+	local TRUNK_COLOR = palette.trunk
+	local CANOPY_COLORS = palette.canopy
+	local BUSH_COLORS = palette.canopy
+	local ROCK_COLORS = { palette.rock, palette.rockDark, palette.wallDark }
 
 	local function spawnTree(i: number, x: number, z: number, scale: number)
 		local trunk = makePart(vegetation, "Trunk_" .. i)
@@ -434,7 +425,7 @@ function Map.build(): MapData
 		canopy.Size = Vector3.new(6 * scale, 6 * scale, 6 * scale)
 		canopy.Position = Vector3.new(x, 8.5 * scale, z)
 		canopy.Color = CANOPY_COLORS[vegRng:NextInteger(1, #CANOPY_COLORS)]
-		canopy.Material = Enum.Material.Grass
+		canopy.Material = palette.canopyMaterial
 		canopy.CanCollide = false
 	end
 
@@ -454,7 +445,7 @@ function Map.build(): MapData
 		bush.Size = Vector3.new(s * 1.5, s, s * 1.5)
 		bush.Position = Vector3.new(bx, s * 0.4, bz)
 		bush.Color = BUSH_COLORS[vegRng:NextInteger(1, #BUSH_COLORS)]
-		bush.Material = Enum.Material.Grass
+		bush.Material = palette.canopyMaterial
 		bush.CanCollide = false
 	end
 
@@ -469,7 +460,7 @@ function Map.build(): MapData
 		rock.CFrame = CFrame.new(rx, sy * 0.5, rz)
 			* CFrame.Angles(0, vegRng:NextNumber() * math.pi * 2, 0)
 		rock.Color = ROCK_COLORS[vegRng:NextInteger(1, #ROCK_COLORS)]
-		rock.Material = Enum.Material.Rock
+		rock.Material = palette.rockMaterial
 		rock.CanCollide = false
 	end
 
@@ -494,13 +485,7 @@ function Map.build(): MapData
 	local ridgeOuterR = arenaHalf + 92
 	local ridgeDepth = ridgeOuterR - ridgeInnerR
 
-	local RIDGE_COLORS = {
-		Color3.fromRGB(95, 90, 82),
-		Color3.fromRGB(110, 100, 90),
-		Color3.fromRGB(78, 72, 65),
-		Color3.fromRGB(90, 85, 75),
-		Color3.fromRGB(115, 105, 92),
-	}
+	local RIDGE_COLORS = palette.ridge
 
 	-- Picks a point inside the jagged ridge band. Returns x, z, and t in
 	-- [0, 1] indicating how far along the band (0 = inner / near arena,
@@ -555,7 +540,7 @@ function Map.build(): MapData
 		wedge.Size = Vector3.new(width, height, depth)
 		wedge.CFrame = CFrame.new(rx, height / 2 - 2, rz) * CFrame.Angles(tiltX, yaw, tiltZ)
 		wedge.Color = RIDGE_COLORS[vegRng:NextInteger(1, #RIDGE_COLORS)]
-		wedge.Material = Enum.Material.Rock
+		wedge.Material = palette.rockMaterial
 	end
 
 	-- A second pass of wedges flipped vertically so the slopes fan in
@@ -579,7 +564,7 @@ function Map.build(): MapData
 			* CFrame.Angles(math.pi, 0, 0)
 			* CFrame.Angles(0, yaw, 0)
 		wedge.Color = RIDGE_COLORS[vegRng:NextInteger(1, #RIDGE_COLORS)]
-		wedge.Material = Enum.Material.Rock
+		wedge.Material = palette.rockMaterial
 	end
 
 	-- --- Mountain range (outside the invisible walls) ---
@@ -609,10 +594,10 @@ function Map.build(): MapData
 		end
 	end
 
-	local ROCK_LIGHT = Color3.fromRGB(128, 118, 105)
-	local ROCK_MID = Color3.fromRGB(105, 96, 85)
-	local ROCK_DARK = Color3.fromRGB(78, 72, 65)
-	local SNOW = Color3.fromRGB(240, 240, 245)
+	local ROCK_LIGHT = palette.mountainMid
+	local ROCK_MID = palette.mountainMid
+	local ROCK_DARK = palette.mountainBase
+	local SNOW = palette.mountainPeak
 
 	local function buildMountain(i: number, mx: number, mz: number)
 		local baseW = 24 + vegRng:NextNumber() * 24 -- 24-48
@@ -628,7 +613,7 @@ function Map.build(): MapData
 		base.Size = Vector3.new(baseW, baseH, baseW)
 		base.CFrame = CFrame.new(mx, baseH / 2 - 2, mz) * CFrame.Angles(0, yaw, 0)
 		base.Color = ROCK_DARK
-		base.Material = Enum.Material.Rock
+		base.Material = palette.rockMaterial
 		base.CanCollide = false
 
 		-- Middle slab
@@ -639,7 +624,7 @@ function Map.build(): MapData
 		mid.CFrame = CFrame.new(mx + offX, baseH + midH / 2 - 2, mz + offZ)
 			* CFrame.Angles(0, yaw + 0.35, 0)
 		mid.Color = ROCK_MID
-		mid.Material = Enum.Material.Rock
+		mid.Material = palette.rockMaterial
 		mid.CanCollide = false
 
 		-- Upper ledge
@@ -650,10 +635,10 @@ function Map.build(): MapData
 		upper.CFrame = CFrame.new(mx + offX * 0.6, baseH + midH + upperH / 2 - 2, mz + offZ * 0.6)
 			* CFrame.Angles(0, yaw + 0.7, 0)
 		upper.Color = ROCK_LIGHT
-		upper.Material = Enum.Material.Rock
+		upper.Material = palette.rockMaterial
 		upper.CanCollide = false
 
-		-- Snowy peak
+		-- Peak (snow, sand, neon, etc. depending on realm)
 		local peak = makePart(mountains, "MntPeak_" .. i)
 		peak.Size = Vector3.new(peakW, peakH, peakW)
 		peak.CFrame = CFrame.new(
@@ -662,7 +647,7 @@ function Map.build(): MapData
 			mz + offZ * 0.3
 		) * CFrame.Angles(0, yaw + 1.1, 0)
 		peak.Color = SNOW
-		peak.Material = Enum.Material.Snow
+		peak.Material = palette.mountainPeakMaterial
 		peak.CanCollide = false
 	end
 

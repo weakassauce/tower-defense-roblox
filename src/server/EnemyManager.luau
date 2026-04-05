@@ -13,10 +13,14 @@ local EnemyManager = {}
 
 export type EnemyConfig = {
 	enemyType: string,
+	silhouette: string, -- "goblin" | "scout" | "troll" — picks body geometry
+	flourish: string, -- "none" | "crystal" | "bone" | "leaf" | "antenna"
+	realm: string,
 	hp: number,
 	speed: number,
 	reward: number,
 	color: Color3,
+	accentColor: Color3,
 	scale: number,
 }
 
@@ -40,6 +44,7 @@ export type Enemy = {
 	poisonTimer: number,
 	poisonDps: number,
 	enemyType: string,
+	silhouette: string,
 	color: Color3,
 	deathColor: Color3,
 	deathY: number,
@@ -429,6 +434,114 @@ local function buildTroll(model: Model, config: EnemyConfig): (Part, number)
 	return body, 9.0 * s
 end
 
+-- Attaches a single theme decoration on top of an already-built enemy body
+-- so realms feel visually distinct without needing 15 separate model
+-- builders. Flourishes are stacked at the top of the head (goblin/troll)
+-- or along the spine (scout).
+local function applyFlourish(model: Model, config: EnemyConfig, barY: number)
+	if config.flourish == "none" then
+		return
+	end
+	local s = config.scale
+	local accent = config.accentColor
+	local topY = barY - 1.2 * s
+
+	if config.flourish == "crystal" then
+		-- Ice crystal shards pointing up out of the head/back
+		local c1 = makePart("Crystal1", Vector3.new(0.6, 2.0, 0.6) * s, accent, Enum.Material.Ice)
+		c1.CFrame = CFrame.new(0, topY + 1.0 * s, 0) * CFrame.Angles(math.rad(10), 0, math.rad(5))
+		c1.Transparency = 0.1
+		c1.Parent = model
+		local c2 = makePart("Crystal2", Vector3.new(0.4, 1.4, 0.4) * s, accent, Enum.Material.Ice)
+		c2.CFrame = CFrame.new(0.6 * s, topY + 0.6 * s, 0) * CFrame.Angles(0, 0, math.rad(20))
+		c2.Transparency = 0.1
+		c2.Parent = model
+	elseif config.flourish == "bone" then
+		-- Bleached bone horns/ribs
+		local boneColor = Color3.fromRGB(240, 230, 210)
+		local h1 = makePart(
+			"BoneHornL",
+			Vector3.new(0.4, 1.6, 0.4) * s,
+			boneColor,
+			Enum.Material.SmoothPlastic
+		)
+		h1.CFrame = CFrame.new(-0.7 * s, topY + 0.4 * s, 0)
+			* CFrame.Angles(math.rad(-15), 0, math.rad(-25))
+		h1.Parent = model
+		local h2 = makePart(
+			"BoneHornR",
+			Vector3.new(0.4, 1.6, 0.4) * s,
+			boneColor,
+			Enum.Material.SmoothPlastic
+		)
+		h2.CFrame = CFrame.new(0.7 * s, topY + 0.4 * s, 0)
+			* CFrame.Angles(math.rad(-15), 0, math.rad(25))
+		h2.Parent = model
+		local skull = makePart(
+			"SkullCap",
+			Vector3.new(1.4, 0.4, 1.4) * s,
+			boneColor,
+			Enum.Material.SmoothPlastic,
+			Enum.PartType.Ball
+		)
+		skull.CFrame = CFrame.new(0, topY + 0.2 * s, 0)
+		skull.Parent = model
+	elseif config.flourish == "leaf" then
+		-- Vine/leaf crown
+		local leafColor = Color3.fromRGB(46, 125, 50)
+		for i = 0, 5 do
+			local angle = (i / 6) * math.pi * 2
+			local leaf = makePart(
+				"Leaf" .. i,
+				Vector3.new(0.9, 0.25, 0.5) * s,
+				leafColor,
+				Enum.Material.LeafyGrass
+			)
+			leaf.CFrame = CFrame.new(
+				math.cos(angle) * 0.9 * s,
+				topY + 0.3 * s,
+				math.sin(angle) * 0.9 * s
+			) * CFrame.Angles(0, angle, math.rad(20))
+			leaf.Parent = model
+		end
+		local vine = makePart(
+			"Vine",
+			Vector3.new(0.3, 1.6, 0.3) * s,
+			Color3.fromRGB(60, 100, 40),
+			Enum.Material.LeafyGrass
+		)
+		vine.CFrame = CFrame.new(0, topY + 0.9 * s, 0)
+		vine.Parent = model
+	elseif config.flourish == "antenna" then
+		-- Sci-fi antenna + glowing neon core on the forehead
+		local rod = makePart(
+			"Antenna",
+			Vector3.new(0.25, 2.2, 0.25) * s,
+			Color3.fromRGB(60, 66, 90),
+			Enum.Material.Metal
+		)
+		rod.CFrame = CFrame.new(0, topY + 1.1 * s, 0)
+		rod.Parent = model
+		local tip = makePart(
+			"AntennaTip",
+			Vector3.new(0.6, 0.6, 0.6) * s,
+			accent,
+			Enum.Material.Neon,
+			Enum.PartType.Ball
+		)
+		tip.CFrame = CFrame.new(0, topY + 2.3 * s, 0)
+		tip.Parent = model
+		local light = Instance.new("PointLight")
+		light.Color = accent
+		light.Range = 6
+		light.Brightness = 1.5
+		light.Parent = tip
+		local visor = makePart("Visor", Vector3.new(1.6, 0.3, 0.2) * s, accent, Enum.Material.Neon)
+		visor.CFrame = CFrame.new(0, topY - 0.4 * s, -0.9 * s)
+		visor.Parent = model
+	end
+end
+
 -- Builds a composite enemy model. Returns (model, rootPart, barY) where
 -- rootPart is the primary body used for positioning/HP bar attachment,
 -- and barY is the local Y distance from the body to the HP bar.
@@ -436,16 +549,18 @@ local function buildEnemyModel(config: EnemyConfig): (Model, Part, number)
 	local model = Instance.new("Model")
 	model.Name = "Enemy_" .. config.enemyType
 
-	if config.enemyType == "scout" then
-		local body, barY = buildScout(model, config)
-		return model, body, barY
-	elseif config.enemyType == "troll" then
-		local body, barY = buildTroll(model, config)
-		return model, body, barY
+	local body: Part
+	local barY: number
+	if config.silhouette == "scout" then
+		body, barY = buildScout(model, config)
+	elseif config.silhouette == "troll" then
+		body, barY = buildTroll(model, config)
 	else
-		local body, barY = buildGoblin(model, config)
-		return model, body, barY
+		body, barY = buildGoblin(model, config)
 	end
+
+	applyFlourish(model, config, barY)
+	return model, body, barY
 end
 
 local function buildHpBar(
@@ -459,6 +574,8 @@ local function buildHpBar(
 	billboard.StudsOffset = Vector3.new(0, barY + 2.5, 0)
 	billboard.AlwaysOnTop = true
 	billboard.LightInfluence = 0
+	-- Hide HP bars from far away (lobby is 3000+ studs from the arena)
+	billboard.MaxDistance = 200
 	billboard.Parent = parent
 
 	-- "X/X" text above the bar
@@ -559,6 +676,7 @@ function EnemyManager.spawn(config: EnemyConfig): Enemy
 		poisonTimer = 0,
 		poisonDps = 0,
 		enemyType = config.enemyType,
+		silhouette = config.silhouette,
 		color = config.color,
 		deathColor = config.color,
 		deathY = barY * 0.4,
@@ -807,7 +925,9 @@ function EnemyManager.getAll(): { Enemy }
 	return enemies
 end
 
--- Per-type walk animation parameters — bigger numbers = more comedic bounce
+-- Walk animation parameters keyed on silhouette (not realm-specific
+-- enemyType), so every realm's small/fast/tank enemies share the right
+-- bounce profile.
 local WALK_PARAMS: { [string]: { bounce: number, wobble: number, freq: number } } = {
 	goblin = { bounce = 0.55, wobble = 0.10, freq = 4.0 },
 	scout = { bounce = 0.25, wobble = 0.05, freq = 6.5 },
@@ -856,7 +976,7 @@ function EnemyManager.update(dt: number)
 
 		-- Advance walk animation phase (scaled by current speed so slowed
 		-- enemies also bounce slower)
-		local walk = WALK_PARAMS[enemy.enemyType] or DEFAULT_WALK
+		local walk = WALK_PARAMS[enemy.silhouette] or DEFAULT_WALK
 		enemy.walkPhase += dt * enemy.speed * 0.35
 		local p = enemy.walkPhase * walk.freq
 		local bounceY = math.abs(math.sin(p)) * walk.bounce
