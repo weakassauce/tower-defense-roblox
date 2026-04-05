@@ -105,11 +105,7 @@ local function buildArena(realmName: string)
 
 	-- Extend the waypoints with the interior of the castle so enemies
 	-- visibly march into the gate before dying.
-	local castlePalette = {
-		stone = realm.palette.castleStone,
-		stoneDark = realm.palette.castleStoneDark,
-	}
-	local extraWaypoints = Castle.build(mapData.castleCenter, Config.STARTING_HP, castlePalette)
+	local extraWaypoints = Castle.build(mapData.castleCenter, Config.STARTING_HP, realmName)
 	for _, wp in extraWaypoints do
 		table.insert(mapData.waypoints, wp)
 	end
@@ -212,11 +208,7 @@ local function resetGame()
 	WaveController.reset()
 	GameState.resetCurrentRealm()
 	-- Rebuild the castle (it may have exploded on the previous defeat)
-	local realm = RealmDefs.get(realmName)
-	Castle.build(currentArena.mapData.castleCenter, Config.STARTING_HP, {
-		stone = realm.palette.castleStone,
-		stoneDark = realm.palette.castleStoneDark,
-	})
+	Castle.build(currentArena.mapData.castleCenter, Config.STARTING_HP, realmName)
 	Castle.updateHp(GameState.get().hp, Config.STARTING_HP)
 	broadcastState()
 end
