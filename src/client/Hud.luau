@@ -788,4 +788,17 @@ function Hud.isGameOver(): boolean
 	return currentState.gameOver
 end
 
+-- Tutorial helpers: expose the raw state and let other modules look up UI
+-- elements by name so they can be highlighted or queried.
+function Hud.getState()
+	return currentState
+end
+
+function Hud.getElement(name: string): GuiObject?
+	if not screen then
+		return nil
+	end
+	return screen:FindFirstChild(name, true) :: GuiObject?
+end
+
 return Hud

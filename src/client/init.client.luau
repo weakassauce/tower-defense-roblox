@@ -11,13 +11,21 @@ local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
 local Hud = require(script.Hud)
 local Placement = require(script.Placement)
+local Tutorial = require(script.Tutorial)
 
 local player = Players.LocalPlayer
 print(string.format("[TowerDefense] Client booting for %s", player.Name))
 
 Hud.mount(function()
-	-- Home screen Play button was clicked — enable placement
-	Placement.setEnabled(true)
+	-- Home screen Play button was clicked — ask whether to run the tutorial
+	Tutorial.showPrompt(function()
+		-- Yes: enable placement so the player can interact, then start tutorial
+		Placement.setEnabled(true)
+		Tutorial.start(nil)
+	end, function()
+		-- No: skip straight to free play
+		Placement.setEnabled(true)
+	end)
 end)
 
 Placement.init()
