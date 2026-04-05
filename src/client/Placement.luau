@@ -226,14 +226,14 @@ function Placement.cinematicReturnToCharacter(duration: number)
 	end)
 end
 
--- Immediately drops out of cinematic mode and restores the overview
--- camera (used on restart when a new game starts).
+-- Clears any in-progress cinematic lerp. Unlike the original version of
+-- this function, we DON'T force the camera back to overview — if the
+-- player ended up in character view at the end of the castle-destroyed
+-- cinematic, they keep that view across restarts and can press Tab
+-- whenever they want to swap to the top-down placement camera.
 function Placement.cinematicRelease()
 	cinematicCFrame = nil
 	lerpStartCFrame = nil
-	mode = "overview"
-	camera.CameraType = Enum.CameraType.Scriptable
-	camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
 end
 
 function Placement.init()
