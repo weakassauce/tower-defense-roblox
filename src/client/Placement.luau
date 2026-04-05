@@ -25,6 +25,10 @@ local camera = workspace.CurrentCamera
 local mode: Mode = "overview"
 local enabled = false
 
+-- When set, the RenderStepped loop uses this CFrame every frame instead of
+-- the normal overview/explore logic. Used by the castle-destroyed cinematic.
+local cinematicCFrame: CFrame? = nil
+
 local preview: Part? = nil
 local previewRange: Part? = nil
 local cellsFolder: Folder? = nil
@@ -173,6 +177,21 @@ function Placement.setEnabled(v: boolean)
 	end
 end
 
+-- Locks the camera to a fixed cinematic CFrame (in front of the castle).
+-- Pass nil to release.
+function Placement.setCinematicCFrame(cf: CFrame?)
+	cinematicCFrame = cf
+	if not cf then
+		-- Snap back to the appropriate mode-specific camera on next frame
+		if mode == "overview" then
+			camera.CameraType = Enum.CameraType.Scriptable
+			camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
+		else
+			camera.CameraType = Enum.CameraType.Custom
+		end
+	end
+end
+
 function Placement.init()
 	buildPreview()
 	hidePreview()
@@ -195,6 +214,12 @@ function Placement.init()
 
 	-- Keep the scripted camera pinned each frame + update hover preview
 	RunService.RenderStepped:Connect(function()
+		if cinematicCFrame then
+			camera.CameraType = Enum.CameraType.Scriptable
+			camera.CFrame = cinematicCFrame
+			hidePreview()
+			return
+		end
 		if mode == "overview" and camera.CameraType == Enum.CameraType.Scriptable then
 			camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
 		end

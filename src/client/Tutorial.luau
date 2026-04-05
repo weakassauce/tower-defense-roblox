@@ -116,24 +116,22 @@ local function buildOverlay()
 	screen.DisplayOrder = 50
 	screen.Parent = playerGui
 
-	local dim = Instance.new("Frame")
-	dim.Name = "Dim"
-	dim.Size = UDim2.fromScale(1, 1)
-	dim.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	dim.BackgroundTransparency = 0.55
-	dim.BorderSizePixel = 0
-	dim.Parent = screen
+	-- No dim overlay — we don't want to obscure the game or any HUD
+	-- element we're trying to highlight. The bright pulsing box is enough
+	-- to draw attention.
 
-	-- Highlight (pulsing stroke tracks the target element)
+	-- Highlight (bright gold fill + pulsing stroke, tracks target element)
 	highlightFrame = Instance.new("Frame")
 	highlightFrame.Name = "Highlight"
 	highlightFrame.AnchorPoint = Vector2.new(0, 0)
-	highlightFrame.BackgroundTransparency = 1
+	highlightFrame.BackgroundColor3 = COLOR_HIGHLIGHT
+	highlightFrame.BackgroundTransparency = 0.78 -- mostly transparent golden glow
+	highlightFrame.BorderSizePixel = 0
 	highlightFrame.Visible = false
-	highlightFrame.ZIndex = 10
+	highlightFrame.ZIndex = 50
 	highlightFrame.Parent = screen
 	addCorner(highlightFrame, 14)
-	highlightStroke = addStroke(highlightFrame, COLOR_HIGHLIGHT, 5)
+	highlightStroke = addStroke(highlightFrame, COLOR_HIGHLIGHT, 6)
 
 	-- Bouncing arrow pointer
 	local pl = Instance.new("TextLabel")
@@ -403,9 +401,11 @@ function Tutorial.start(onComplete: (() -> ())?)
 			updatePointer(step.target)
 		end
 
-		-- Pulse the highlight stroke for attention
-		if highlightStroke then
-			highlightStroke.Thickness = 3 + 4 * (0.5 + 0.5 * math.sin(os.clock() * 4.5))
+		-- Pulse the highlight stroke + glow for attention
+		if highlightStroke and highlightFrame then
+			local pulse = 0.5 + 0.5 * math.sin(os.clock() * 4.5)
+			highlightStroke.Thickness = 5 + 6 * pulse -- 5-11 px
+			highlightFrame.BackgroundTransparency = 0.85 - 0.15 * pulse -- 0.7-0.85
 		end
 
 		-- Auto-advance if the step's condition is met

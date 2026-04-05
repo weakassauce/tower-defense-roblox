@@ -51,5 +51,6 @@ Remotes.Restart = getOrMakeRemote("Restart")
 Remotes.StateUpdate = getOrMakeRemote("StateUpdate")
 Remotes.WaveComplete = getOrMakeRemote("WaveComplete")
 Remotes.GameOver = getOrMakeRemote("GameOver")
+Remotes.CastleDestroyed = getOrMakeRemote("CastleDestroyed")
 
 return Remotes

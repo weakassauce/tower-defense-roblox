@@ -30,9 +30,15 @@ end)
 
 Placement.init()
 
--- Server → client state sync
+-- Server → client state sync. Also watches for a gameOver → not gameOver
+-- transition so the cinematic camera is released on restart.
+local wasGameOver = false
 Remotes.StateUpdate.OnClientEvent:Connect(function(state)
 	Hud.onStateUpdate(state)
+	if wasGameOver and not state.gameOver then
+		Placement.setCinematicCFrame(nil)
+	end
+	wasGameOver = state.gameOver
 end)
 
 -- Wave completion notification. If the player has the AUTO WAVE toggle on,
@@ -50,6 +56,17 @@ Remotes.WaveComplete.OnClientEvent:Connect(function(_bonus)
 			Remotes.StartWave:FireServer()
 		end
 	end)
+end)
+
+-- When the castle is destroyed, swing the camera to a cinematic angle
+-- in front of it so the player watches the explosion play out.
+Remotes.CastleDestroyed.OnClientEvent:Connect(function(castlePos)
+	if typeof(castlePos) ~= "Vector3" then
+		return
+	end
+	local eye = castlePos + Vector3.new(-38, 22, -14)
+	local target = castlePos + Vector3.new(0, 9, 0)
+	Placement.setCinematicCFrame(CFrame.lookAt(eye, target))
 end)
 
 Remotes.GameOver.OnClientEvent:Connect(function()

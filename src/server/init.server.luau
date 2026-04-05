@@ -218,7 +218,16 @@ RunService.Heartbeat:Connect(function(dt)
 			Castle.flashDamage()
 			if died then
 				Castle.explode()
-				Remotes.GameOver:FireAllClients()
+				-- Fire a cinematic signal immediately so the client can
+				-- swing the camera to the castle and watch the explosion,
+				-- then send the actual GameOver screen a few seconds later
+				-- so it doesn't obscure the animation.
+				Remotes.CastleDestroyed:FireAllClients(mapData.castleCenter)
+				task.delay(4, function()
+					if GameState.get().gameOver then
+						Remotes.GameOver:FireAllClients()
+					end
+				end)
 			end
 		elseif not enemy.alive and not enemy.reachedEnd and not enemy.rewarded then
 			enemy.rewarded = true
