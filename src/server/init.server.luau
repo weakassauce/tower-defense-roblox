@@ -261,6 +261,26 @@ function ensurePlayerContext(player: Player): PlayerContext?
 	for realmName, wave in save.highestWaves do
 		gameState:getHighestWaves()[realmName] = wave
 	end
+	-- Restore per-realm in-progress saves (tower layout, wave, inventory,
+	-- hp) so re-entering a realm resumes exactly where the player left
+	-- off last session. Also inject any carried celestial items back into
+	-- the starting inventory so the premium tower isn't lost across
+	-- sessions.
+	for realmName, rs in save.realmSaves do
+		gameState.realmSaves[realmName] = {
+			hp = rs.hp,
+			waveNum = rs.waveNum,
+			waveActive = rs.waveActive,
+			gameOver = rs.gameOver,
+			inventory = rs.inventory,
+			towers = rs.towers,
+		}
+	end
+	if save.celestialCount > 0 then
+		for _ = 1, save.celestialCount do
+			gameState:addToInventory("celestial", 0)
+		end
+	end
 
 	local arena = ArenaController.new(player, slotOffset, gameState)
 
@@ -284,11 +304,35 @@ end
 -- handles its own throttling + error logging.
 local function persistContext(ctx: PlayerContext)
 	local state = ctx.gameState:get()
+	-- Count carried celestial items in the active inventory. These are
+	-- stripped from realmSaves by saveCurrentRealm (they travel with the
+	-- player, not per-realm), so we persist them as a separate count and
+	-- re-inject on load.
+	local celestialCount = 0
+	for _, item in state.inventory do
+		if item.towerType == "celestial" then
+			celestialCount += 1
+		end
+	end
+	-- Build a serializable copy of realmSaves for the DataStore.
+	local realmSavesData: { [string]: PlayerProgress.RealmSaveData } = {}
+	for realmName, rs in ctx.gameState.realmSaves do
+		realmSavesData[realmName] = {
+			hp = rs.hp,
+			waveNum = rs.waveNum,
+			waveActive = rs.waveActive,
+			gameOver = rs.gameOver,
+			inventory = rs.inventory,
+			towers = rs.towers,
+		}
+	end
 	local data: PlayerProgress.SaveData = {
 		gold = state.gold,
 		ownedGuns = state.ownedGuns,
 		equippedGun = state.equippedGun,
 		highestWaves = ctx.gameState:getHighestWaves(),
+		realmSaves = realmSavesData,
+		celestialCount = celestialCount,
 	}
 	PlayerProgress.save(ctx.player, data)
 	ctx.lastSaveAt = os.clock()

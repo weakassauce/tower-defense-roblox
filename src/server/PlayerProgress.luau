@@ -21,11 +21,25 @@ local PlayerProgress = {}
 -- loaded into a mismatched schema.
 local STORE_NAME = "TowerDefenseProgress_v1"
 
+-- Per-realm snapshot stored in the DataStore so players resume where
+-- they left off across sessions. Mirrors GameState.RealmSave but lives
+-- here as a plain table for serialization.
+export type RealmSaveData = {
+	hp: number,
+	waveNum: number,
+	waveActive: boolean,
+	gameOver: boolean,
+	inventory: { { towerType: string, cost: number } },
+	towers: { { gx: number, gy: number, towerType: string } },
+}
+
 export type SaveData = {
 	gold: number,
 	ownedGuns: { [string]: boolean },
 	equippedGun: string?,
 	highestWaves: { [string]: number },
+	realmSaves: { [string]: RealmSaveData },
+	celestialCount: number, -- carried celestial inventory items (not in realmSaves)
 }
 
 local function keyFor(player: Player): string
@@ -56,6 +70,8 @@ local function defaultSave(): SaveData
 		ownedGuns = { starter = true },
 		equippedGun = "starter",
 		highestWaves = {},
+		realmSaves = {},
+		celestialCount = 0,
 	}
 end
 
@@ -87,6 +103,41 @@ local function coerce(raw: any): SaveData
 				save.highestWaves[k] = math.floor(v)
 			end
 		end
+	end
+	if typeof(raw.realmSaves) == "table" then
+		for realmName, realmRaw in raw.realmSaves do
+			if typeof(realmName) == "string" and typeof(realmRaw) == "table" then
+				local rs: RealmSaveData = {
+					hp = if typeof(realmRaw.hp) == "number" then realmRaw.hp else 0,
+					waveNum = if typeof(realmRaw.waveNum) == "number" then math.floor(realmRaw.waveNum) else 0,
+					waveActive = if typeof(realmRaw.waveActive) == "boolean" then realmRaw.waveActive else false,
+					gameOver = if typeof(realmRaw.gameOver) == "boolean" then realmRaw.gameOver else false,
+					inventory = {},
+					towers = {},
+				}
+				if typeof(realmRaw.inventory) == "table" then
+					for _, item in realmRaw.inventory do
+						if typeof(item) == "table" and typeof(item.towerType) == "string" then
+							table.insert(rs.inventory, {
+								towerType = item.towerType,
+								cost = if typeof(item.cost) == "number" then item.cost else 0,
+							})
+						end
+					end
+				end
+				if typeof(realmRaw.towers) == "table" then
+					for _, t in realmRaw.towers do
+						if typeof(t) == "table" and typeof(t.gx) == "number" and typeof(t.gy) == "number" and typeof(t.towerType) == "string" then
+							table.insert(rs.towers, { gx = t.gx, gy = t.gy, towerType = t.towerType })
+						end
+					end
+				end
+				save.realmSaves[realmName] = rs
+			end
+		end
+	end
+	if typeof(raw.celestialCount) == "number" then
+		save.celestialCount = math.floor(raw.celestialCount)
 	end
 	return save
 end
