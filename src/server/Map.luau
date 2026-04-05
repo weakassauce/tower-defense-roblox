@@ -84,6 +84,47 @@ function Map.build(): MapData
 		end
 	end
 
+	-- --- Invisible containment walls at the ground-plate edges ---
+	-- These stop the character from jumping over the stone walls and
+	-- walking off the world. Transparent, collidable, tall enough for any
+	-- reasonable jump.
+	local invis = Instance.new("Folder")
+	invis.Name = "InvisibleWalls"
+	invis.Parent = mapFolder
+
+	local groundHalf = groundSize / 2
+	local invHeight = 60
+	local function makeInvisibleWall(name: string, size: Vector3, pos: Vector3)
+		local w = makePart(invis, name)
+		w.Size = size
+		w.Position = pos
+		w.Transparency = 1
+		w.CanCollide = true
+		w.CanTouch = false
+		w.CanQuery = false
+		w.CastShadow = false
+	end
+	makeInvisibleWall(
+		"InvN",
+		Vector3.new(groundSize, invHeight, 2),
+		Vector3.new(0, invHeight / 2, -groundHalf)
+	)
+	makeInvisibleWall(
+		"InvS",
+		Vector3.new(groundSize, invHeight, 2),
+		Vector3.new(0, invHeight / 2, groundHalf)
+	)
+	makeInvisibleWall(
+		"InvE",
+		Vector3.new(2, invHeight, groundSize),
+		Vector3.new(groundHalf, invHeight / 2, 0)
+	)
+	makeInvisibleWall(
+		"InvW",
+		Vector3.new(2, invHeight, groundSize),
+		Vector3.new(-groundHalf, invHeight / 2, 0)
+	)
+
 	-- --- Border stone walls ---
 	local walls = Instance.new("Folder")
 	walls.Name = "Walls"

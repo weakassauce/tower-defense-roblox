@@ -18,14 +18,48 @@ local TowerManager = require(script.TowerManager)
 local GameState = require(script.GameState)
 local WaveController = require(script.WaveController)
 local LightingSetup = require(script.LightingSetup)
+local Castle = require(script.Castle)
 
 print("[TowerDefense] Server booting")
 
 LightingSetup.apply()
 
+-- Strip the default Baseplate / SpawnLocation that come with a blank place
+for _, child in workspace:GetChildren() do
+	if child.Name == "Baseplate" or child:IsA("SpawnLocation") then
+		child:Destroy()
+	end
+end
+
+-- Custom invisible spawn at the map center so players land on the grass
+local spawn = Instance.new("SpawnLocation")
+spawn.Name = "TDSpawn"
+spawn.Size = Vector3.new(4, 0.4, 4)
+spawn.Position = Vector3.new(0, 1.2, 0)
+spawn.Anchored = true
+spawn.CanCollide = true
+spawn.Transparency = 1
+spawn.TopSurface = Enum.SurfaceType.Smooth
+spawn.BottomSurface = Enum.SurfaceType.Smooth
+spawn.Neutral = true
+spawn.Enabled = true
+spawn.Parent = workspace
+
 local mapData = Map.build()
+
+-- Place the castle just past the final path waypoint and extend the
+-- waypoint list with the two interior spots so enemies visibly march into
+-- the gate before dying.
+local finalPathPoint = mapData.waypoints[#mapData.waypoints]
+local castlePos = Vector3.new(finalPathPoint.X + 15, 0, finalPathPoint.Z)
+local extraWaypoints = Castle.build(castlePos, Config.STARTING_HP)
+for _, wp in extraWaypoints do
+	table.insert(mapData.waypoints, wp)
+end
+
 EnemyManager.init(mapData.waypoints)
 TowerManager.init()
+Castle.updateHp(GameState.get().hp, Config.STARTING_HP)
 
 print(
 	string.format(
@@ -68,6 +102,7 @@ local function resetGame()
 	TowerManager.clear()
 	WaveController.reset()
 	GameState.reset()
+	Castle.updateHp(GameState.get().hp, Config.STARTING_HP)
 	broadcastState()
 end
 
@@ -179,6 +214,8 @@ RunService.Heartbeat:Connect(function(dt)
 			enemy.damaged = true
 			local died = GameState.damage(1)
 			stateChanged = true
+			Castle.updateHp(GameState.get().hp, Config.STARTING_HP)
+			Castle.flashDamage()
 			if died then
 				Remotes.GameOver:FireAllClients()
 			end
