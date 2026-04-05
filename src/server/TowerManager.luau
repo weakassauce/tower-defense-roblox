@@ -685,11 +685,14 @@ function TowerManager.update(dt: number)
 			fire(tower, nearest)
 			tower.fireCooldown = 1 / tower.def.fireRate
 
-			-- Rotate the orb to face the target (flavor, not strictly required)
-			local targetPos = nearest.root.Position
-			local orbPos = tower.orb.Position
-			tower.orb.CFrame =
-				CFrame.lookAt(orbPos, Vector3.new(targetPos.X, orbPos.Y, targetPos.Z))
+			-- Only cannon towers physically rotate to aim — everything else
+			-- (archers, wizards, frost, storm, alchemist, inferno) is static.
+			if tower.towerType == "cannon" then
+				local targetPos = nearest.root.Position
+				local barrelPos = tower.orb.Position
+				tower.orb.CFrame =
+					CFrame.lookAt(barrelPos, Vector3.new(targetPos.X, barrelPos.Y, targetPos.Z))
+			end
 		end
 	end
 

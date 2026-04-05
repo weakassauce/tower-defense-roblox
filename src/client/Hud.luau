@@ -553,6 +553,11 @@ end
 local function updateSelectedInfo()
 	local def = TowerDefs[selection.towerType]
 	if not def then
+		selectedIcon.Text = "—"
+		selectedName.Text = "Nothing selected"
+		selectedCost.Text = "Click a tower to select"
+		selectedCost.TextColor3 = COLOR_TEXT_DIM
+		selectedStats.Text = ""
 		return
 	end
 	selectedIcon.Text = def.icon
@@ -737,9 +742,15 @@ function Hud.showGameOver()
 end
 
 function Hud.selectTower(towerType: string)
-	selection.towerType = towerType
-	selection.fromInventoryIndex = -1
-	lastPanelTower = towerType
+	-- Click the already-selected panel button again → deselect
+	if selection.fromInventoryIndex < 0 and selection.towerType == towerType then
+		selection.towerType = ""
+		selection.fromInventoryIndex = -1
+	else
+		selection.towerType = towerType
+		selection.fromInventoryIndex = -1
+		lastPanelTower = towerType
+	end
 	updateTowerButtons()
 	updateInventory()
 	updateSelectedInfo()

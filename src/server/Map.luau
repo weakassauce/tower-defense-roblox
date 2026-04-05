@@ -45,8 +45,9 @@ function Map.build(): MapData
 	mapFolder.Name = "Map"
 	mapFolder.Parent = workspace
 
-	-- --- Ground platform (extends beyond the grid for visual padding) ---
-	local padding = 24
+	-- --- Ground platform (extends well beyond the grid so vegetation
+	-- around the map has something to stand on) ---
+	local padding = 120
 	local groundSize = Config.GRID_SIZE * Config.CELL_SIZE + padding
 	local ground = makePart(mapFolder, "Ground")
 	ground.Size = Vector3.new(groundSize, 2, groundSize)
@@ -126,6 +127,97 @@ function Map.build(): MapData
 		cap.Position = Vector3.new(cx, 7.2, cz)
 		cap.Color = COLOR_WALL
 		cap.Material = Enum.Material.Brick
+	end
+
+	-- --- Vegetation (trees / bushes / rocks) outside the walls ---
+	local vegetation = Instance.new("Folder")
+	vegetation.Name = "Vegetation"
+	vegetation.Parent = mapFolder
+
+	local vegRng = Random.new(20260404)
+	local innerEdge = halfGrid + 6 -- start a few studs beyond the walls
+	local outerEdge = halfGrid + (groundSize / 2 - halfGrid) - 4
+
+	local function randomOutsidePoint(): (number, number)
+		-- Pick a random spot in the padding ring around the grid
+		local side = vegRng:NextInteger(1, 4)
+		local along = vegRng:NextNumber(-outerEdge, outerEdge)
+		local perp = vegRng:NextNumber(innerEdge, outerEdge)
+		if side == 1 then
+			return along, -perp
+		elseif side == 2 then
+			return along, perp
+		elseif side == 3 then
+			return -perp, along
+		else
+			return perp, along
+		end
+	end
+
+	-- Trees: slim trunk + large spherical canopy
+	local TRUNK_COLOR = Color3.fromRGB(82, 52, 36)
+	local CANOPY_COLORS = {
+		Color3.fromRGB(27, 94, 32),
+		Color3.fromRGB(33, 113, 39),
+		Color3.fromRGB(46, 125, 50),
+		Color3.fromRGB(20, 82, 28),
+	}
+	for i = 1, 70 do
+		local tx, tz = randomOutsidePoint()
+		local scale = 0.85 + vegRng:NextNumber() * 0.7
+
+		local trunk = makePart(vegetation, "Trunk_" .. i)
+		trunk.Size = Vector3.new(1.2 * scale, 7 * scale, 1.2 * scale)
+		trunk.Position = Vector3.new(tx, 3.5 * scale, tz)
+		trunk.Color = TRUNK_COLOR
+		trunk.Material = Enum.Material.Wood
+		trunk.CanCollide = false
+
+		local canopy = makePart(vegetation, "Canopy_" .. i)
+		canopy.Shape = Enum.PartType.Ball
+		canopy.Size = Vector3.new(6 * scale, 6 * scale, 6 * scale)
+		canopy.Position = Vector3.new(tx, 8.5 * scale, tz)
+		canopy.Color = CANOPY_COLORS[vegRng:NextInteger(1, #CANOPY_COLORS)]
+		canopy.Material = Enum.Material.Grass
+		canopy.CanCollide = false
+	end
+
+	-- Bushes: small green spheres clustered on the ground
+	local BUSH_COLORS = {
+		Color3.fromRGB(56, 142, 60),
+		Color3.fromRGB(67, 160, 71),
+		Color3.fromRGB(46, 125, 50),
+	}
+	for i = 1, 50 do
+		local bx, bz = randomOutsidePoint()
+		local s = 1.5 + vegRng:NextNumber() * 1.3
+		local bush = makePart(vegetation, "Bush_" .. i)
+		bush.Shape = Enum.PartType.Ball
+		bush.Size = Vector3.new(s * 1.5, s, s * 1.5)
+		bush.Position = Vector3.new(bx, s * 0.4, bz)
+		bush.Color = BUSH_COLORS[vegRng:NextInteger(1, #BUSH_COLORS)]
+		bush.Material = Enum.Material.Grass
+		bush.CanCollide = false
+	end
+
+	-- Rocks: irregular grey boulders
+	local ROCK_COLORS = {
+		Color3.fromRGB(117, 117, 117),
+		Color3.fromRGB(97, 97, 97),
+		Color3.fromRGB(78, 78, 78),
+	}
+	for i = 1, 35 do
+		local rx, rz = randomOutsidePoint()
+		local sx = 1.4 + vegRng:NextNumber() * 2
+		local sy = 0.8 + vegRng:NextNumber() * 1.2
+		local sz = 1.4 + vegRng:NextNumber() * 2
+		local rock = makePart(vegetation, "Rock_" .. i)
+		rock.Size = Vector3.new(sx, sy, sz)
+		rock.CFrame = CFrame.new(rx, sy * 0.5, rz)
+			* CFrame.Angles(0, vegRng:NextNumber() * math.pi * 2, 0)
+		rock.Color = ROCK_COLORS[vegRng:NextInteger(1, #ROCK_COLORS)]
+		rock.Material = Enum.Material.Rock
+		rock.CanCollide = false
 	end
 
 	-- --- Waypoints for enemy pathing ---

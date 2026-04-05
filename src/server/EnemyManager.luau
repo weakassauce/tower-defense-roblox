@@ -24,6 +24,7 @@ export type Enemy = {
 	model: Model,
 	root: Part,
 	hpFill: Frame,
+	hpText: TextLabel,
 	hp: number,
 	maxHp: number,
 	speed: number,
@@ -254,28 +255,61 @@ local function buildEnemyModel(config: EnemyConfig): (Model, Part)
 	end
 end
 
-local function buildHpBar(parent: Part): Frame
+local function buildHpBar(parent: Part, maxHp: number): (Frame, TextLabel)
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "HpBar"
-	billboard.Size = UDim2.fromOffset(80, 10)
-	billboard.StudsOffset = Vector3.new(0, parent.Size.Y * 0.6 + 1.5, 0)
+	billboard.Size = UDim2.fromOffset(130, 36)
+	billboard.StudsOffset = Vector3.new(0, parent.Size.Y * 0.6 + 2.5, 0)
 	billboard.AlwaysOnTop = true
+	billboard.LightInfluence = 0
 	billboard.Parent = parent
 
+	-- "X/X" text above the bar
+	local hpText = Instance.new("TextLabel")
+	hpText.Name = "HpText"
+	hpText.Size = UDim2.fromOffset(130, 16)
+	hpText.Position = UDim2.fromOffset(0, 0)
+	hpText.BackgroundTransparency = 1
+	hpText.Text = string.format("%d/%d", maxHp, maxHp)
+	hpText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	hpText.Font = Enum.Font.GothamBold
+	hpText.TextSize = 14
+	hpText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	hpText.TextStrokeTransparency = 0
+	hpText.TextXAlignment = Enum.TextXAlignment.Center
+	hpText.Parent = billboard
+
+	-- Background strip with rounded corners
 	local bg = Instance.new("Frame")
-	bg.Size = UDim2.fromScale(1, 1)
-	bg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	bg.Name = "BarBg"
+	bg.Size = UDim2.fromOffset(126, 14)
+	bg.Position = UDim2.fromOffset(2, 20)
+	bg.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
 	bg.BorderSizePixel = 0
 	bg.Parent = billboard
 
+	local bgCorner = Instance.new("UICorner")
+	bgCorner.CornerRadius = UDim.new(0, 5)
+	bgCorner.Parent = bg
+
+	local bgStroke = Instance.new("UIStroke")
+	bgStroke.Color = Color3.fromRGB(0, 0, 0)
+	bgStroke.Thickness = 2
+	bgStroke.Parent = bg
+
+	-- Fill frame (width scales with HP ratio)
 	local fill = Instance.new("Frame")
 	fill.Name = "Fill"
 	fill.Size = UDim2.fromScale(1, 1)
-	fill.BackgroundColor3 = Color3.fromRGB(102, 187, 106)
+	fill.BackgroundColor3 = Color3.fromRGB(60, 230, 80)
 	fill.BorderSizePixel = 0
 	fill.Parent = bg
 
-	return fill
+	local fillCorner = Instance.new("UICorner")
+	fillCorner.CornerRadius = UDim.new(0, 5)
+	fillCorner.Parent = fill
+
+	return fill, hpText
 end
 
 -- --- Public API ---
@@ -302,7 +336,7 @@ function EnemyManager.spawn(config: EnemyConfig): Enemy
 	assert(enemyFolder, "enemyFolder not initialized")
 
 	local model, body = buildEnemyModel(config)
-	local hpFill = buildHpBar(body)
+	local hpFill, hpText = buildHpBar(body, config.hp)
 
 	local startPos = waypoints[1]
 	model:PivotTo(CFrame.new(startPos))
@@ -312,6 +346,7 @@ function EnemyManager.spawn(config: EnemyConfig): Enemy
 		model = model,
 		root = body,
 		hpFill = hpFill,
+		hpText = hpText,
 		hp = config.hp,
 		maxHp = config.hp,
 		speed = config.speed,
@@ -345,15 +380,20 @@ function EnemyManager.damage(enemy: Enemy, amount: number)
 		return
 	end
 
-	-- Update HP bar
+	-- Update HP bar + text
+	local shownHp = math.max(0, math.ceil(enemy.hp))
+	enemy.hpText.Text = string.format("%d/%d", shownHp, enemy.maxHp)
 	local ratio = math.max(0, enemy.hp / enemy.maxHp)
 	enemy.hpFill.Size = UDim2.fromScale(ratio, 1)
 	if ratio > 0.5 then
-		enemy.hpFill.BackgroundColor3 = Color3.fromRGB(102, 187, 106)
+		-- Vibrant green
+		enemy.hpFill.BackgroundColor3 = Color3.fromRGB(60, 230, 80)
 	elseif ratio > 0.25 then
-		enemy.hpFill.BackgroundColor3 = Color3.fromRGB(255, 167, 38)
+		-- Bright amber
+		enemy.hpFill.BackgroundColor3 = Color3.fromRGB(255, 170, 30)
 	else
-		enemy.hpFill.BackgroundColor3 = Color3.fromRGB(239, 83, 80)
+		-- Vibrant red
+		enemy.hpFill.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
 	end
 end
 

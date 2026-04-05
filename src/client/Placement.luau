@@ -204,13 +204,18 @@ function Placement.init()
 			return
 		end
 
+		local sel = Hud.getSelection()
+		local def = TowerDefs[sel.towerType]
+		if not def then
+			-- Nothing selected → no preview
+			hidePreview()
+			return
+		end
+
 		local gx, gy = getCellUnderMouse()
 		if gx and gy then
-			local sel = Hud.getSelection()
-			local def = TowerDefs[sel.towerType]
-			local rangeStuds = def and def.range or 20
 			local isPath = Config.isPath(gx, gy)
-			showPreview(gx, gy, not isPath, rangeStuds)
+			showPreview(gx, gy, not isPath, def.range)
 		else
 			hidePreview()
 		end
@@ -223,9 +228,12 @@ function Placement.init()
 		end
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			local sel = Hud.getSelection()
+			if not TowerDefs[sel.towerType] then
+				return -- nothing selected
+			end
 			local gx, gy = getCellUnderMouse()
 			if gx and gy then
-				local sel = Hud.getSelection()
 				if sel.fromInventoryIndex >= 0 then
 					Remotes.PlaceFromInventory:FireServer(sel.fromInventoryIndex, gx, gy)
 				else
