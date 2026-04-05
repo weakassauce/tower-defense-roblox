@@ -850,6 +850,13 @@ function Hud.getElement(name: string): GuiObject?
 	return screen:FindFirstChild(name, true) :: GuiObject?
 end
 
+-- Exposes the HUD's ScreenGui so the tutorial can parent its highlight
+-- directly inside it (same coordinate space, no cross-ScreenGui inset
+-- mismatch to fight with).
+function Hud.getScreen(): ScreenGui?
+	return screen
+end
+
 function Hud.isAutoWaveEnabled(): boolean
 	return autoWaveEnabled
 end

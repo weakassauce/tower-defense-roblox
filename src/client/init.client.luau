@@ -36,7 +36,7 @@ local wasGameOver = false
 Remotes.StateUpdate.OnClientEvent:Connect(function(state)
 	Hud.onStateUpdate(state)
 	if wasGameOver and not state.gameOver then
-		Placement.setCinematicCFrame(nil)
+		Placement.cinematicRelease()
 	end
 	wasGameOver = state.gameOver
 end)
@@ -58,15 +58,22 @@ Remotes.WaveComplete.OnClientEvent:Connect(function(_bonus)
 	end)
 end)
 
--- When the castle is destroyed, swing the camera to a cinematic angle
--- in front of it so the player watches the explosion play out.
+-- When the castle is destroyed, pan the camera to a cinematic angle in
+-- front of it, hold for ~1 second while the explosion plays, then pan
+-- back to the normal overview view. The Game Over screen is scheduled
+-- to appear ~4 seconds after the explosion, so it shows up over the
+-- regular view instead of the cinematic.
 Remotes.CastleDestroyed.OnClientEvent:Connect(function(castlePos)
 	if typeof(castlePos) ~= "Vector3" then
 		return
 	end
 	local eye = castlePos + Vector3.new(-38, 22, -14)
 	local target = castlePos + Vector3.new(0, 9, 0)
-	Placement.setCinematicCFrame(CFrame.lookAt(eye, target))
+	Placement.cinematicPanTo(CFrame.lookAt(eye, target), 1.5)
+
+	task.delay(2.7, function()
+		Placement.cinematicReturnToOverview(1.2)
+	end)
 end)
 
 Remotes.GameOver.OnClientEvent:Connect(function()

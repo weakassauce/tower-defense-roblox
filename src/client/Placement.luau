@@ -28,6 +28,9 @@ local enabled = false
 -- When set, the RenderStepped loop uses this CFrame every frame instead of
 -- the normal overview/explore logic. Used by the castle-destroyed cinematic.
 local cinematicCFrame: CFrame? = nil
+local lerpStartCFrame: CFrame? = nil
+local lerpStartTime = 0
+local lerpDuration = 0
 
 local preview: Part? = nil
 local previewRange: Part? = nil
@@ -177,19 +180,33 @@ function Placement.setEnabled(v: boolean)
 	end
 end
 
--- Locks the camera to a fixed cinematic CFrame (in front of the castle).
--- Pass nil to release.
-function Placement.setCinematicCFrame(cf: CFrame?)
+-- Smoothly lerps the camera from its current position to `cf` over
+-- `duration` seconds and then holds it there. While cinematic, placement
+-- preview is hidden.
+function Placement.cinematicPanTo(cf: CFrame, duration: number)
+	lerpStartCFrame = camera.CFrame
 	cinematicCFrame = cf
-	if not cf then
-		-- Snap back to the appropriate mode-specific camera on next frame
-		if mode == "overview" then
-			camera.CameraType = Enum.CameraType.Scriptable
-			camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
-		else
-			camera.CameraType = Enum.CameraType.Custom
-		end
-	end
+	lerpStartTime = os.clock()
+	lerpDuration = math.max(0, duration)
+end
+
+-- Lerps back to the overview camera over `duration` seconds, then releases
+-- the cinematic override so normal camera logic resumes.
+function Placement.cinematicReturnToOverview(duration: number)
+	lerpStartCFrame = camera.CFrame
+	cinematicCFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
+	lerpStartTime = os.clock()
+	lerpDuration = math.max(0.01, duration)
+	task.delay(duration, function()
+		cinematicCFrame = nil
+		lerpStartCFrame = nil
+	end)
+end
+
+-- Immediately drops out of cinematic mode (used on restart).
+function Placement.cinematicRelease()
+	cinematicCFrame = nil
+	lerpStartCFrame = nil
 end
 
 function Placement.init()
@@ -216,7 +233,17 @@ function Placement.init()
 	RunService.RenderStepped:Connect(function()
 		if cinematicCFrame then
 			camera.CameraType = Enum.CameraType.Scriptable
-			camera.CFrame = cinematicCFrame
+			if lerpStartCFrame and lerpDuration > 0 then
+				local t = math.clamp((os.clock() - lerpStartTime) / lerpDuration, 0, 1)
+				-- Ease-out quad
+				local eased = 1 - (1 - t) * (1 - t)
+				camera.CFrame = lerpStartCFrame:Lerp(cinematicCFrame, eased)
+				if t >= 1 then
+					lerpStartCFrame = nil
+				end
+			else
+				camera.CFrame = cinematicCFrame
+			end
 			hidePreview()
 			return
 		end

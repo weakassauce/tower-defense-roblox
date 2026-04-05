@@ -116,20 +116,20 @@ local function buildOverlay()
 	screen.DisplayOrder = 50
 	screen.Parent = playerGui
 
-	-- No dim overlay — we don't want to obscure the game or any HUD
-	-- element we're trying to highlight. The bright pulsing box is enough
-	-- to draw attention.
+	-- Highlight lives INSIDE the Hud ScreenGui so AbsolutePosition of any
+	-- Hud element is in the same coordinate space as the highlight's
+	-- parent. This eliminates any cross-ScreenGui inset mismatch.
+	local hudScreen = Hud.getScreen() or screen
 
-	-- Highlight (bright gold fill + pulsing stroke, tracks target element)
 	highlightFrame = Instance.new("Frame")
-	highlightFrame.Name = "Highlight"
+	highlightFrame.Name = "TutorialHighlight"
 	highlightFrame.AnchorPoint = Vector2.new(0, 0)
 	highlightFrame.BackgroundColor3 = COLOR_HIGHLIGHT
-	highlightFrame.BackgroundTransparency = 0.78 -- mostly transparent golden glow
+	highlightFrame.BackgroundTransparency = 0.78
 	highlightFrame.BorderSizePixel = 0
 	highlightFrame.Visible = false
-	highlightFrame.ZIndex = 50
-	highlightFrame.Parent = screen
+	highlightFrame.ZIndex = 500
+	highlightFrame.Parent = hudScreen
 	addCorner(highlightFrame, 14)
 	highlightStroke = addStroke(highlightFrame, COLOR_HIGHLIGHT, 6)
 
@@ -419,6 +419,11 @@ function Tutorial.finish()
 	if heartbeatConn then
 		heartbeatConn:Disconnect()
 		heartbeatConn = nil
+	end
+	-- Highlight lives in the Hud screen, not the Tutorial screen, so
+	-- destroy it explicitly before tearing down the Tutorial screen.
+	if highlightFrame then
+		highlightFrame:Destroy()
 	end
 	if screen then
 		screen:Destroy()

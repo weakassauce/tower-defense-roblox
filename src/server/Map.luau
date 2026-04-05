@@ -102,6 +102,7 @@ function Map.build(): MapData
 		local pos = Config.gridToWorld(coord[1], coord[2])
 		waypoints[i] = Vector3.new(pos.X, 2, pos.Z)
 	end
+	local firstWp = waypoints[1]
 	local finalWp = waypoints[#waypoints]
 	local castleCenter = Vector3.new(finalWp.X + CASTLE_OFFSET_X, 0, finalWp.Z)
 
@@ -237,6 +238,109 @@ function Map.build(): MapData
 	end
 	makeCornerTower(castleEastX, castleNorthZ)
 	makeCornerTower(castleEastX, castleSouthZ)
+
+	-- --- Enemy gate (drawbridge where goblins emerge) ---
+	do
+		local gate = Instance.new("Folder")
+		gate.Name = "EnemyGate"
+		gate.Parent = mapFolder
+
+		local gx = firstWp.X
+		local gz = firstWp.Z
+		local stone = Color3.fromRGB(120, 115, 105)
+		local stoneDark = Color3.fromRGB(76, 72, 65)
+		local wood = Color3.fromRGB(93, 64, 55)
+		local woodDark = Color3.fromRGB(62, 39, 35)
+		local darkOpening = Color3.fromRGB(12, 6, 2)
+
+		local function gatePart(name: string): Part
+			local p = Instance.new("Part")
+			p.Name = name
+			p.Anchored = true
+			p.CanCollide = false
+			p.TopSurface = Enum.SurfaceType.Smooth
+			p.BottomSurface = Enum.SurfaceType.Smooth
+			p.CastShadow = true
+			p.Parent = gate
+			return p
+		end
+
+		-- Stone platform the gate stands on
+		local base = gatePart("Base")
+		base.Size = Vector3.new(14, 1.2, 12)
+		base.Position = Vector3.new(gx - 3, 0.6, gz)
+		base.Color = stoneDark
+		base.Material = Enum.Material.Slate
+
+		-- Two stone pillars flanking the path
+		local pillarL = gatePart("PillarL")
+		pillarL.Size = Vector3.new(3.5, 12, 3.5)
+		pillarL.Position = Vector3.new(gx - 3, 7.2, gz - 4.8)
+		pillarL.Color = stone
+		pillarL.Material = Enum.Material.Brick
+
+		local pillarR = gatePart("PillarR")
+		pillarR.Size = Vector3.new(3.5, 12, 3.5)
+		pillarR.Position = Vector3.new(gx - 3, 7.2, gz + 4.8)
+		pillarR.Color = stone
+		pillarR.Material = Enum.Material.Brick
+
+		-- Arch across the top joining the pillars
+		local arch = gatePart("Arch")
+		arch.Size = Vector3.new(4, 2.4, 11)
+		arch.Position = Vector3.new(gx - 3, 14.4, gz)
+		arch.Color = stoneDark
+		arch.Material = Enum.Material.Brick
+
+		-- Pillar caps
+		local capL = gatePart("CapL")
+		capL.Size = Vector3.new(4.4, 0.8, 4.4)
+		capL.Position = Vector3.new(gx - 3, 15.8, gz - 4.8)
+		capL.Color = stoneDark
+		capL.Material = Enum.Material.Brick
+
+		local capR = gatePart("CapR")
+		capR.Size = Vector3.new(4.4, 0.8, 4.4)
+		capR.Position = Vector3.new(gx - 3, 15.8, gz + 4.8)
+		capR.Color = stoneDark
+		capR.Material = Enum.Material.Brick
+
+		-- Dark cavern opening behind the arch (where enemies emerge)
+		local opening = gatePart("Opening")
+		opening.Size = Vector3.new(0.6, 10, 7)
+		opening.Position = Vector3.new(gx - 5.4, 6.2, gz)
+		opening.Color = darkOpening
+		opening.Material = Enum.Material.SmoothPlastic
+
+		-- Wooden drawbridge planks extending forward (east) from the gate
+		for i = 1, 5 do
+			local plank = gatePart("Plank" .. i)
+			plank.Size = Vector3.new(1.3, 0.35, 8)
+			plank.Position = Vector3.new(gx + (i - 1) * 1.4, 1.4, gz)
+			plank.Color = if i % 2 == 0 then woodDark else wood
+			plank.Material = Enum.Material.Wood
+		end
+
+		-- Iron chains on each side (thin vertical cylinders)
+		local chainL = gatePart("ChainL")
+		chainL.Size = Vector3.new(0.3, 10, 0.3)
+		chainL.Position = Vector3.new(gx + 5, 7, gz - 4.4)
+		chainL.Color = Color3.fromRGB(55, 52, 48)
+		chainL.Material = Enum.Material.Metal
+
+		local chainR = gatePart("ChainR")
+		chainR.Size = Vector3.new(0.3, 10, 0.3)
+		chainR.Position = Vector3.new(gx + 5, 7, gz + 4.4)
+		chainR.Color = Color3.fromRGB(55, 52, 48)
+		chainR.Material = Enum.Material.Metal
+
+		-- A small red banner hanging from the arch for flavor
+		local banner = gatePart("Banner")
+		banner.Size = Vector3.new(0.2, 2.8, 2.2)
+		banner.Position = Vector3.new(gx - 2.6, 12, gz)
+		banner.Color = Color3.fromRGB(120, 30, 30)
+		banner.Material = Enum.Material.Fabric
+	end
 
 	-- --- Vegetation ---
 	local vegetation = Instance.new("Folder")
