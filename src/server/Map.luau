@@ -378,6 +378,56 @@ function Map.build(): MapData
 		spawnTree(1000 + i, tx, tz, scale)
 	end
 
+	-- --- Grass slopes at the arena edge ---
+	-- Tilted slope blocks that meet the ground at the tree ring and rise
+	-- outward to form foothills leading up toward the mountain range.
+	local slopesFolder = Instance.new("Folder")
+	slopesFolder.Name = "Slopes"
+	slopesFolder.Parent = mapFolder
+
+	local slopeLowR = arenaHalf - 8 -- low edge right at the outer tree ring
+	local slopeHighR = arenaHalf + 52
+	local slopeRise = 32
+	local slopeWidth = arenaSize + 120 -- wider than the arena side so corners overlap
+	local slopeThickness = 8
+	local SLOPE_COLOR = Color3.fromRGB(76, 145, 65)
+
+	local function buildSlope(name: string, p1: Vector3, p2: Vector3)
+		local dir = p2 - p1
+		if dir.Magnitude < 0.01 then
+			return
+		end
+		local slopeUnit = dir.Unit
+		local horizontalDir = Vector3.new(dir.X, 0, dir.Z)
+		if horizontalDir.Magnitude < 0.01 then
+			return
+		end
+		local horizontalUnit = horizontalDir.Unit
+
+		-- Horizontal perpendicular (90° CCW around Y) — this is the slope's
+		-- width direction (local +X of the block).
+		local horizontalPerp = Vector3.new(-horizontalUnit.Z, 0, horizontalUnit.X)
+		-- Slope normal — the "up" direction of the tilted block.
+		local slopeNormal = horizontalPerp:Cross(slopeUnit).Unit
+
+		local length = dir.Magnitude
+		-- Offset the center down by thickness/2 along the normal so the
+		-- block's top surface aligns with the p1→p2 line.
+		local center = (p1 + p2) * 0.5 - slopeNormal * (slopeThickness * 0.5)
+
+		local slope = makePart(slopesFolder, name)
+		slope.Size = Vector3.new(slopeWidth, slopeThickness, length)
+		slope.CFrame = CFrame.fromMatrix(center, horizontalPerp, slopeNormal)
+		slope.Color = SLOPE_COLOR
+		slope.Material = Enum.Material.Grass
+		slope.CanCollide = true
+	end
+
+	buildSlope("SlopeN", Vector3.new(0, 0, -slopeLowR), Vector3.new(0, slopeRise, -slopeHighR))
+	buildSlope("SlopeS", Vector3.new(0, 0, slopeLowR), Vector3.new(0, slopeRise, slopeHighR))
+	buildSlope("SlopeE", Vector3.new(slopeLowR, 0, 0), Vector3.new(slopeHighR, slopeRise, 0))
+	buildSlope("SlopeW", Vector3.new(-slopeLowR, 0, 0), Vector3.new(-slopeHighR, slopeRise, 0))
+
 	-- --- Mountain range (outside the invisible walls) ---
 	-- Tall stepped stone peaks placed in a band between the arena tree
 	-- ring and the far ground edge. Still sitting on the main ground
