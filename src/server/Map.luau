@@ -378,55 +378,67 @@ function Map.build(): MapData
 		spawnTree(1000 + i, tx, tz, scale)
 	end
 
-	-- --- Grass slopes at the arena edge ---
-	-- Tilted slope blocks that meet the ground at the tree ring and rise
-	-- outward to form foothills leading up toward the mountain range.
-	local slopesFolder = Instance.new("Folder")
-	slopesFolder.Name = "Slopes"
-	slopesFolder.Parent = mapFolder
+	-- --- Jagged ridge rocks around the arena edge ---
+	-- A dense band of randomly rotated, varied-height rock pillars that
+	-- starts right at the tree ring and grows taller as it extends outward,
+	-- forming a jagged rocky foothill profile with visible ridges and peaks.
+	local ridges = Instance.new("Folder")
+	ridges.Name = "Ridges"
+	ridges.Parent = mapFolder
 
-	local slopeLowR = arenaHalf - 8 -- low edge right at the outer tree ring
-	local slopeHighR = arenaHalf + 52
-	local slopeRise = 32
-	local slopeWidth = arenaSize + 120 -- wider than the arena side so corners overlap
-	local slopeThickness = 8
-	local SLOPE_COLOR = Color3.fromRGB(76, 145, 65)
+	local ridgeInnerR = arenaHalf - 8 -- flush with the outer tree ring
+	local ridgeOuterR = arenaHalf + 92
+	local ridgeDepth = ridgeOuterR - ridgeInnerR
 
-	local function buildSlope(name: string, p1: Vector3, p2: Vector3)
-		local dir = p2 - p1
-		if dir.Magnitude < 0.01 then
-			return
+	local RIDGE_COLORS = {
+		Color3.fromRGB(95, 90, 82),
+		Color3.fromRGB(110, 100, 90),
+		Color3.fromRGB(78, 72, 65),
+		Color3.fromRGB(90, 85, 75),
+		Color3.fromRGB(115, 105, 92),
+	}
+
+	-- Picks a point inside the jagged ridge band. Returns x, z, and t in
+	-- [0, 1] indicating how far along the band (0 = inner / near arena,
+	-- 1 = outer). The t value is used to gradient the pillar heights.
+	local function randomRidgePoint(): (number, number, number)
+		local side = vegRng:NextInteger(1, 4)
+		local along = vegRng:NextNumber(-(arenaHalf + 70), arenaHalf + 70)
+		local t = vegRng:NextNumber()
+		local perp = ridgeInnerR + t * ridgeDepth
+		if side == 1 then
+			return along, -perp, t
+		elseif side == 2 then
+			return along, perp, t
+		elseif side == 3 then
+			return -perp, along, t
+		else
+			return perp, along, t
 		end
-		local slopeUnit = dir.Unit
-		local horizontalDir = Vector3.new(dir.X, 0, dir.Z)
-		if horizontalDir.Magnitude < 0.01 then
-			return
-		end
-		local horizontalUnit = horizontalDir.Unit
-
-		-- Horizontal perpendicular (90° CCW around Y) — this is the slope's
-		-- width direction (local +X of the block).
-		local horizontalPerp = Vector3.new(-horizontalUnit.Z, 0, horizontalUnit.X)
-		-- Slope normal — the "up" direction of the tilted block.
-		local slopeNormal = horizontalPerp:Cross(slopeUnit).Unit
-
-		local length = dir.Magnitude
-		-- Offset the center down by thickness/2 along the normal so the
-		-- block's top surface aligns with the p1→p2 line.
-		local center = (p1 + p2) * 0.5 - slopeNormal * (slopeThickness * 0.5)
-
-		local slope = makePart(slopesFolder, name)
-		slope.Size = Vector3.new(slopeWidth, slopeThickness, length)
-		slope.CFrame = CFrame.fromMatrix(center, horizontalPerp, slopeNormal)
-		slope.Color = SLOPE_COLOR
-		slope.Material = Enum.Material.Grass
-		slope.CanCollide = true
 	end
 
-	buildSlope("SlopeN", Vector3.new(0, 0, -slopeLowR), Vector3.new(0, slopeRise, -slopeHighR))
-	buildSlope("SlopeS", Vector3.new(0, 0, slopeLowR), Vector3.new(0, slopeRise, slopeHighR))
-	buildSlope("SlopeE", Vector3.new(slopeLowR, 0, 0), Vector3.new(slopeHighR, slopeRise, 0))
-	buildSlope("SlopeW", Vector3.new(-slopeLowR, 0, 0), Vector3.new(-slopeHighR, slopeRise, 0))
+	for i = 1, 680 do
+		local rx, rz, t = randomRidgePoint()
+
+		-- Height grows from ~6 at the inner edge to ~85 at the outer edge,
+		-- plus a big random jitter to create ridges and valleys.
+		local heightBase = 6 + t * 80
+		local heightJitter = vegRng:NextNumber() * 45
+		local height = heightBase + heightJitter -- range ~6 to ~130
+
+		local width = 4 + vegRng:NextNumber() * 9
+		local depth = 4 + vegRng:NextNumber() * 9
+		local yaw = vegRng:NextNumber() * math.pi * 2
+		local tiltX = (vegRng:NextNumber() - 0.5) * 0.25
+		local tiltZ = (vegRng:NextNumber() - 0.5) * 0.25
+
+		local pillar = makePart(ridges, "Ridge_" .. i)
+		pillar.Size = Vector3.new(width, height, depth)
+		pillar.CFrame = CFrame.new(rx, height / 2 - 2, rz) * CFrame.Angles(tiltX, yaw, tiltZ)
+		pillar.Color = RIDGE_COLORS[vegRng:NextInteger(1, #RIDGE_COLORS)]
+		pillar.Material = Enum.Material.Rock
+		pillar.CanCollide = false
+	end
 
 	-- --- Mountain range (outside the invisible walls) ---
 	-- Tall stepped stone peaks placed in a band between the arena tree
@@ -436,7 +448,8 @@ function Map.build(): MapData
 	mountains.Name = "Mountains"
 	mountains.Parent = mapFolder
 
-	local mountainInnerEdge = arenaHalf + 40
+	-- Mountains start well beyond the ridge band so the two zones don't overlap
+	local mountainInnerEdge = arenaHalf + 110
 	local mountainOuterEdge = groundHalf - 25
 
 	local function randomMountainPoint(): (number, number)
