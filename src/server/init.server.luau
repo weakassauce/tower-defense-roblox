@@ -281,11 +281,11 @@ Remotes.PlaceTower.OnServerEvent:Connect(function(player, gx, gy, towerType)
 		return
 	end
 	-- Premium tower: require the 99 R$ game pass.
-	if towerType == GamePassConfig.PREMIUM_TOWER_KEY and not ownsPremiumTower(player) then
+	local isPremium = towerType == GamePassConfig.PREMIUM_TOWER_KEY
+	if isPremium and not ownsPremiumTower(player) then
 		return
 	end
-	-- Gate the realm signature tower: a realm's signature tower can only
-	-- be built in that realm. Universal towers are always allowed.
+	-- Allowed towers in this realm = 5 base + 3 signature + premium.
 	local realm = RealmDefs.get(state.realm)
 	local isUniversal = false
 	for _, universal in RealmDefs.UNIVERSAL_TOWERS do
@@ -294,7 +294,11 @@ Remotes.PlaceTower.OnServerEvent:Connect(function(player, gx, gy, towerType)
 			break
 		end
 	end
-	if not isUniversal and realm.signatureTower ~= towerType then
+	if
+		not isUniversal
+		and not isPremium
+		and not RealmDefs.isSignatureTower(state.realm, towerType)
+	then
 		return
 	end
 	if Config.isPath(gx, gy) then
@@ -303,9 +307,13 @@ Remotes.PlaceTower.OnServerEvent:Connect(function(player, gx, gy, towerType)
 	if TowerManager.isOccupied(gx, gy) then
 		return
 	end
-	local scaledCost = math.floor(def.cost * realm.costMultiplier)
-	if not GameState.trySpend(scaledCost) then
-		return
+	-- The premium celestial tower is free to place once the player
+	-- owns the game pass — the Robux purchase is the only cost.
+	if not isPremium then
+		local scaledCost = math.floor(def.cost * realm.costMultiplier)
+		if not GameState.trySpend(scaledCost) then
+			return
+		end
 	end
 	TowerManager.place(gx, gy, towerType)
 	broadcastState()

@@ -1067,6 +1067,16 @@ local function updateSelectedInfo()
 	if selection.fromInventoryIndex >= 0 then
 		selectedCost.Text = "FREE (from inventory)"
 		selectedCost.TextColor3 = COLOR_ACCENT_BRIGHT
+	elseif selection.towerType == GamePassConfig.PREMIUM_TOWER_KEY then
+		-- Celestial Bastion is a Robux unlock. Show the Robux price
+		-- prominently — never "X gold" — and once owned, indicate it
+		-- is free to place.
+		if ownsPremiumTower() then
+			selectedCost.Text = GamePassConfig.PREMIUM_TOWER.price .. " R$ (owned · free)"
+		else
+			selectedCost.Text = GamePassConfig.PREMIUM_TOWER.price .. " R$"
+		end
+		selectedCost.TextColor3 = Color3.fromRGB(255, 215, 100)
 	else
 		selectedCost.Text = scaledCost(def.cost) .. " gold"
 		selectedCost.TextColor3 = COLOR_GOLD_TEXT
@@ -1087,22 +1097,39 @@ local function updateTowerButtons()
 		local stroke = towerStrokes[towerType]
 		local isSelected = (selection.fromInventoryIndex < 0 and selection.towerType == towerType)
 
-		-- Premium tower special case: if the player doesn't own the
-		-- game pass, the card shows a Robux price instead of the
-		-- normal gold cost and gets a gold highlight.
-		local isLockedPremium = (towerType == premiumKey) and not hasPremium
-		if isLockedPremium then
+		-- Premium tower: ALWAYS show the Robux price on the card so it
+		-- reads as a real-money purchase, whether or not the player
+		-- already owns it. Locked look gets a dark background; owned
+		-- look gets a brighter gold-trimmed background.
+		if towerType == premiumKey then
 			if costLabel then
 				costLabel.Text = GamePassConfig.PREMIUM_TOWER.price .. " R$"
-			end
-			btn.BackgroundColor3 = Color3.fromRGB(60, 45, 10)
-			btn.BackgroundTransparency = 0.1
-			stroke.Color = COLOR_PREMIUM
-			stroke.Thickness = 3
-			btn:FindFirstChild("Name").TextColor3 = COLOR_PREMIUM
-			btn:FindFirstChild("Icon").TextColor3 = COLOR_PREMIUM
-			if costLabel then
 				costLabel.TextColor3 = COLOR_PREMIUM
+			end
+			if isSelected then
+				btn.BackgroundColor3 = COLOR_PREMIUM
+				btn.BackgroundTransparency = 0
+				stroke.Color = Color3.fromRGB(255, 255, 220)
+				stroke.Thickness = 4
+				btn:FindFirstChild("Name").TextColor3 = Color3.fromRGB(60, 40, 10)
+				btn:FindFirstChild("Icon").TextColor3 = Color3.fromRGB(60, 40, 10)
+				if costLabel then
+					costLabel.TextColor3 = Color3.fromRGB(60, 40, 10)
+				end
+			elseif hasPremium then
+				btn.BackgroundColor3 = Color3.fromRGB(50, 35, 10)
+				btn.BackgroundTransparency = 0.1
+				stroke.Color = COLOR_PREMIUM
+				stroke.Thickness = 2
+				btn:FindFirstChild("Name").TextColor3 = COLOR_PREMIUM
+				btn:FindFirstChild("Icon").TextColor3 = COLOR_PREMIUM
+			else
+				btn.BackgroundColor3 = Color3.fromRGB(60, 45, 10)
+				btn.BackgroundTransparency = 0.1
+				stroke.Color = COLOR_PREMIUM
+				stroke.Thickness = 3
+				btn:FindFirstChild("Name").TextColor3 = COLOR_PREMIUM
+				btn:FindFirstChild("Icon").TextColor3 = COLOR_PREMIUM
 			end
 			continue
 		end

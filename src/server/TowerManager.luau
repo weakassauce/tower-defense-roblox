@@ -808,18 +808,40 @@ local function buildCelestial(model: Model, def: TowerDefs.TowerDef, pos: Vector
 end
 
 local TOWER_BUILDERS: { [string]: (Model, TowerDefs.TowerDef, Vector3) -> Part } = {
+	-- Base (universal) towers — available in every realm
 	basic = buildArcher,
 	sniper = buildWizard,
 	cannon = buildCannon,
 	freeze = buildFrost,
-	lightning = buildStorm,
-	poison = buildAlchemist,
 	flame = buildInferno,
+
+	-- "Unique" signature towers (dedicated silhouettes, 1 per realm)
 	paladin = buildPaladin,
 	icelance = buildIcelance,
 	sandstorm = buildSandstorm,
 	thornwall = buildThornwall,
 	plasma = buildPlasma,
+
+	-- The old universal archetypes are now signature-only: poison lives
+	-- in forest (venom_cloud), lightning in space (tesla_storm), etc.
+	lightning = buildStorm,
+	poison = buildAlchemist,
+
+	-- Themed variants sharing visual builders with the base towers but
+	-- carrying distinct stats / names. These round each realm out to 3
+	-- signature towers total.
+	thunder_knight = buildStorm,
+	chapel_archer = buildArcher,
+	blizzard_mage = buildWizard,
+	ice_cannon = buildCannon,
+	sun_archer = buildArcher,
+	pyre_mage = buildInferno,
+	grove_archer = buildArcher,
+	venom_cloud = buildAlchemist,
+	void_cannon = buildCannon,
+	tesla_storm = buildStorm,
+
+	-- Premium (game-pass gated) tower
 	celestial = buildCelestial,
 }
 

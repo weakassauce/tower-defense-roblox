@@ -51,7 +51,10 @@ export type UnlockRequirement = {
 export type RealmDef = {
 	name: string,
 	displayName: string,
-	signatureTower: string, -- TowerDefs key
+	-- Three realm-exclusive tower keys. The first is the "unique"
+	-- signature tower with its own dedicated visual; the other two are
+	-- themed variants that share visuals with the base towers.
+	signatureTowers: { string },
 	palette: RealmPalette,
 	-- Enemy path as (gx, gy) grid coordinates. Each realm has a
 	-- different shape and length; the leftmost portal (Realm Defense)
@@ -209,7 +212,7 @@ local RealmDefs: { [string]: RealmDef } = {
 	defense = {
 		name = "defense",
 		displayName = "Realm Defense",
-		signatureTower = "paladin",
+		signatureTowers = { "paladin", "thunder_knight", "chapel_archer" },
 		path = PATH_DEFENSE,
 		costMultiplier = 1,
 		unlockRequirement = nil,
@@ -285,7 +288,7 @@ local RealmDefs: { [string]: RealmDef } = {
 	frost = {
 		name = "frost",
 		displayName = "Frost Kingdom",
-		signatureTower = "icelance",
+		signatureTowers = { "icelance", "blizzard_mage", "ice_cannon" },
 		path = PATH_FROST,
 		costMultiplier = 1.4,
 		unlockRequirement = { realm = "defense", wave = 10 },
@@ -361,7 +364,7 @@ local RealmDefs: { [string]: RealmDef } = {
 	desert = {
 		name = "desert",
 		displayName = "Desert Wastes",
-		signatureTower = "sandstorm",
+		signatureTowers = { "sandstorm", "sun_archer", "pyre_mage" },
 		path = PATH_DESERT,
 		costMultiplier = 1.8,
 		unlockRequirement = { realm = "frost", wave = 15 },
@@ -437,7 +440,7 @@ local RealmDefs: { [string]: RealmDef } = {
 	forest = {
 		name = "forest",
 		displayName = "Dark Forest",
-		signatureTower = "thornwall",
+		signatureTowers = { "thornwall", "grove_archer", "venom_cloud" },
 		path = PATH_FOREST,
 		costMultiplier = 2.3,
 		unlockRequirement = { realm = "desert", wave = 15 },
@@ -513,7 +516,7 @@ local RealmDefs: { [string]: RealmDef } = {
 	space = {
 		name = "space",
 		displayName = "Void Frontier",
-		signatureTower = "plasma",
+		signatureTowers = { "plasma", "void_cannon", "tesla_storm" },
 		path = PATH_SPACE,
 		costMultiplier = 3,
 		unlockRequirement = { realm = "forest", wave = 15 },
@@ -604,18 +607,35 @@ end
 -- Ordered list of realm names for UI listing
 RealmDefsModule.ORDER = { "defense", "frost", "desert", "forest", "space" }
 
--- The seven universal towers that exist in every realm, plus the realm's
--- signature tower, together form the tower picker for that realm. The
--- "celestial" entry is a premium game-pass tower that appears in every
--- realm's picker but is only placeable if the player owns the pass.
-RealmDefsModule.UNIVERSAL_TOWERS =
-	{ "basic", "sniper", "cannon", "freeze", "lightning", "poison", "flame", "celestial" }
+-- The five base towers that exist in every realm. Each realm then
+-- adds 3 signature towers on top of this, and the premium tower
+-- (celestial) is appended separately by getTowerList.
+RealmDefsModule.UNIVERSAL_TOWERS = { "basic", "sniper", "cannon", "freeze", "flame" }
+
+-- The key of the game-pass premium tower. Appended to every realm's
+-- tower list so it shows up in the HUD picker regardless of realm; the
+-- server still gates placement on pass ownership.
+RealmDefsModule.PREMIUM_TOWER = "celestial"
 
 function RealmDefsModule.getTowerList(realmName: string): { string }
 	local def = RealmDefsModule.get(realmName)
 	local list = table.clone(RealmDefsModule.UNIVERSAL_TOWERS)
-	table.insert(list, def.signatureTower)
+	for _, sig in def.signatureTowers do
+		table.insert(list, sig)
+	end
+	table.insert(list, RealmDefsModule.PREMIUM_TOWER)
 	return list
+end
+
+-- True if `towerType` is a signature tower of `realmName`.
+function RealmDefsModule.isSignatureTower(realmName: string, towerType: string): boolean
+	local def = RealmDefsModule.get(realmName)
+	for _, sig in def.signatureTowers do
+		if sig == towerType then
+			return true
+		end
+	end
+	return false
 end
 
 -- Returns true if the player has met the unlock requirements for this
