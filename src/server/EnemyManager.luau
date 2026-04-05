@@ -47,27 +47,211 @@ local enemyFolder: Folder? = nil
 
 -- --- Model builders ---
 
-local function buildBody(config: EnemyConfig): Part
-	local body = Instance.new("Part")
-	body.Shape = Enum.PartType.Ball
-	body.Anchored = true
-	body.CanCollide = false
-	body.TopSurface = Enum.SurfaceType.Smooth
-	body.BottomSurface = Enum.SurfaceType.Smooth
-	body.Material = Enum.Material.SmoothPlastic
-	body.Color = config.color
+local function makePart(
+	name: string,
+	size: Vector3,
+	color: Color3,
+	material: Enum.Material,
+	shape: Enum.PartType?
+): Part
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Size = size
+	p.Color = color
+	p.Material = material
+	p.Shape = shape or Enum.PartType.Block
+	p.Anchored = true
+	p.CanCollide = false
+	p.CastShadow = true
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	return p
+end
 
-	-- Different sizes per type — we'll refine shapes in a later pass
-	local baseSize = 4
-	if config.enemyType == "troll" then
-		baseSize = 6
-	elseif config.enemyType == "scout" then
-		baseSize = 3
+-- Builds a composite enemy model. Returns (model, rootPart) where rootPart
+-- is the primary body used for positioning and HP bar attachment.
+local function buildEnemyModel(config: EnemyConfig): (Model, Part)
+	local model = Instance.new("Model")
+	model.Name = "Enemy_" .. config.enemyType
+
+	local scale = config.scale
+
+	if config.enemyType == "scout" then
+		-- Wolf-like: elongated body + pointy ears + glowing eyes
+		local body = makePart(
+			"Body",
+			Vector3.new(5.5, 2.8, 3.4) * scale,
+			config.color,
+			Enum.Material.SmoothPlastic
+		)
+		body.Parent = model
+
+		local head = makePart(
+			"Head",
+			Vector3.new(2.4, 2.2, 2.4) * scale,
+			config.color,
+			Enum.Material.SmoothPlastic
+		)
+		head.CFrame = CFrame.new(2.6 * scale, 1.2 * scale, 0)
+		head.Parent = model
+
+		local earL = makePart(
+			"EarL",
+			Vector3.new(0.6, 1.2, 0.6) * scale,
+			Color3.fromRGB(245, 127, 23),
+			Enum.Material.SmoothPlastic
+		)
+		earL.CFrame = CFrame.new(2.8 * scale, 2.5 * scale, -0.7 * scale)
+		earL.Parent = model
+		local earR = makePart(
+			"EarR",
+			Vector3.new(0.6, 1.2, 0.6) * scale,
+			Color3.fromRGB(245, 127, 23),
+			Enum.Material.SmoothPlastic
+		)
+		earR.CFrame = CFrame.new(2.8 * scale, 2.5 * scale, 0.7 * scale)
+		earR.Parent = model
+
+		local eyeL = makePart(
+			"EyeL",
+			Vector3.new(0.4, 0.4, 0.4) * scale,
+			Color3.fromRGB(255, 235, 59),
+			Enum.Material.Neon,
+			Enum.PartType.Ball
+		)
+		eyeL.CFrame = CFrame.new(3.6 * scale, 1.4 * scale, -0.7 * scale)
+		eyeL.Parent = model
+		local eyeR = makePart(
+			"EyeR",
+			Vector3.new(0.4, 0.4, 0.4) * scale,
+			Color3.fromRGB(255, 235, 59),
+			Enum.Material.Neon,
+			Enum.PartType.Ball
+		)
+		eyeR.CFrame = CFrame.new(3.6 * scale, 1.4 * scale, 0.7 * scale)
+		eyeR.Parent = model
+
+		model.PrimaryPart = body
+		return model, body
+	elseif config.enemyType == "troll" then
+		-- Big chunky body + darker head + horns + red eyes
+		local body = makePart(
+			"Body",
+			Vector3.new(5.6, 6.5, 5.4) * scale,
+			config.color,
+			Enum.Material.SmoothPlastic,
+			Enum.PartType.Ball
+		)
+		body.Parent = model
+
+		local head = makePart(
+			"Head",
+			Vector3.new(3.4, 3, 3.4) * scale,
+			Color3.fromRGB(74, 20, 140),
+			Enum.Material.SmoothPlastic,
+			Enum.PartType.Ball
+		)
+		head.CFrame = CFrame.new(0, 4.8 * scale, 0)
+		head.Parent = model
+
+		local hornL = makePart(
+			"HornL",
+			Vector3.new(0.6, 2.4, 0.6) * scale,
+			Color3.fromRGB(33, 33, 33),
+			Enum.Material.SmoothPlastic
+		)
+		hornL.CFrame = CFrame.new(-1.2 * scale, 6.2 * scale, 0) * CFrame.Angles(0, 0, math.rad(-18))
+		hornL.Parent = model
+		local hornR = makePart(
+			"HornR",
+			Vector3.new(0.6, 2.4, 0.6) * scale,
+			Color3.fromRGB(33, 33, 33),
+			Enum.Material.SmoothPlastic
+		)
+		hornR.CFrame = CFrame.new(1.2 * scale, 6.2 * scale, 0) * CFrame.Angles(0, 0, math.rad(18))
+		hornR.Parent = model
+
+		local eyeL = makePart(
+			"EyeL",
+			Vector3.new(0.55, 0.55, 0.55) * scale,
+			Color3.fromRGB(255, 82, 82),
+			Enum.Material.Neon,
+			Enum.PartType.Ball
+		)
+		eyeL.CFrame = CFrame.new(-0.9 * scale, 4.9 * scale, 1.5 * scale)
+		eyeL.Parent = model
+		local eyeR = makePart(
+			"EyeR",
+			Vector3.new(0.55, 0.55, 0.55) * scale,
+			Color3.fromRGB(255, 82, 82),
+			Enum.Material.Neon,
+			Enum.PartType.Ball
+		)
+		eyeR.CFrame = CFrame.new(0.9 * scale, 4.9 * scale, 1.5 * scale)
+		eyeR.Parent = model
+
+		model.PrimaryPart = body
+		return model, body
+	else
+		-- Goblin (default): green body + smaller head + pointy ears + red eyes
+		local body = makePart(
+			"Body",
+			Vector3.new(4, 4.2, 4) * scale,
+			config.color,
+			Enum.Material.SmoothPlastic,
+			Enum.PartType.Ball
+		)
+		body.Parent = model
+
+		local head = makePart(
+			"Head",
+			Vector3.new(2.6, 2.6, 2.6) * scale,
+			Color3.fromRGB(51, 105, 30),
+			Enum.Material.SmoothPlastic,
+			Enum.PartType.Ball
+		)
+		head.CFrame = CFrame.new(0, 3.4 * scale, 0)
+		head.Parent = model
+
+		local earL = makePart(
+			"EarL",
+			Vector3.new(0.6, 1.4, 0.6) * scale,
+			Color3.fromRGB(51, 105, 30),
+			Enum.Material.SmoothPlastic
+		)
+		earL.CFrame = CFrame.new(-1.6 * scale, 4 * scale, 0) * CFrame.Angles(0, 0, math.rad(-35))
+		earL.Parent = model
+		local earR = makePart(
+			"EarR",
+			Vector3.new(0.6, 1.4, 0.6) * scale,
+			Color3.fromRGB(51, 105, 30),
+			Enum.Material.SmoothPlastic
+		)
+		earR.CFrame = CFrame.new(1.6 * scale, 4 * scale, 0) * CFrame.Angles(0, 0, math.rad(35))
+		earR.Parent = model
+
+		local eyeL = makePart(
+			"EyeL",
+			Vector3.new(0.4, 0.4, 0.4) * scale,
+			Color3.fromRGB(255, 23, 68),
+			Enum.Material.Neon,
+			Enum.PartType.Ball
+		)
+		eyeL.CFrame = CFrame.new(-0.7 * scale, 3.5 * scale, 1.1 * scale)
+		eyeL.Parent = model
+		local eyeR = makePart(
+			"EyeR",
+			Vector3.new(0.4, 0.4, 0.4) * scale,
+			Color3.fromRGB(255, 23, 68),
+			Enum.Material.Neon,
+			Enum.PartType.Ball
+		)
+		eyeR.CFrame = CFrame.new(0.7 * scale, 3.5 * scale, 1.1 * scale)
+		eyeR.Parent = model
+
+		model.PrimaryPart = body
+		return model, body
 	end
-	local s = baseSize * config.scale
-	body.Size = Vector3.new(s, s, s)
-
-	return body
 end
 
 local function buildHpBar(parent: Part): Frame
@@ -117,13 +301,8 @@ function EnemyManager.spawn(config: EnemyConfig): Enemy
 	assert(#waypoints > 0, "EnemyManager.init(waypoints) must be called first")
 	assert(enemyFolder, "enemyFolder not initialized")
 
-	local body = buildBody(config)
+	local model, body = buildEnemyModel(config)
 	local hpFill = buildHpBar(body)
-
-	local model = Instance.new("Model")
-	model.Name = "Enemy_" .. config.enemyType
-	body.Parent = model
-	model.PrimaryPart = body
 
 	local startPos = waypoints[1]
 	model:PivotTo(CFrame.new(startPos))

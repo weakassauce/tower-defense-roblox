@@ -1,8 +1,14 @@
 --!strict
 -- src/client/Hud.luau
--- Builds and manages the entire player HUD: top stat bar, tower panel,
--- wave button, inventory (backpack) + panel, controls hint, home screen,
--- game-over screen. Listens for server state updates via `onStateUpdate`.
+-- Builds and manages the entire player HUD:
+--   * Left side panel with stats (HP/Gold/Wave/Enemies) as big icon cards
+--     and a selected-tower info card with damage/range/fire-rate stats.
+--   * Bottom-center tower selection panel (7 towers). Selected button swaps
+--     to a bright gold background with dark text so it's obviously active.
+--   * Wave button above the tower panel.
+--   * Backpack button + inventory panel on the right side.
+--   * Home screen overlay with Play button.
+--   * Game-over overlay with Restart.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -15,13 +21,15 @@ local Hud = {}
 
 -- --- Theme ---
 local COLOR_BG_DARK = Color3.fromRGB(20, 15, 10)
+local COLOR_BG_CARD = Color3.fromRGB(40, 28, 16)
 local COLOR_ACCENT = Color3.fromRGB(212, 165, 116)
 local COLOR_ACCENT_BRIGHT = Color3.fromRGB(232, 194, 143)
 local COLOR_TEXT = Color3.fromRGB(255, 255, 255)
+local COLOR_TEXT_DIM = Color3.fromRGB(168, 151, 120)
 local COLOR_GOLD_TEXT = Color3.fromRGB(255, 213, 79)
 local COLOR_DANGER = Color3.fromRGB(239, 83, 80)
 
--- Display order for tower panel buttons
+-- Display order for the tower panel
 local TOWER_ORDER = { "basic", "sniper", "cannon", "freeze", "lightning", "poison", "flame" }
 
 -- --- Client-side state ---
@@ -47,14 +55,16 @@ local selection: Selection = { towerType = "basic", fromInventoryIndex = -1 }
 local lastPanelTower = "basic"
 local onStartedCallback: (() -> ())? = nil
 
--- --- UI references (populated in mount) ---
+-- --- UI references ---
 local screen: ScreenGui
-local hpLabel: TextLabel
-local goldLabel: TextLabel
-local waveLabel: TextLabel
-local enemiesLabel: TextLabel
+local statsValues: { [string]: TextLabel } = {}
+local selectedIcon: TextLabel
+local selectedName: TextLabel
+local selectedCost: TextLabel
+local selectedStats: TextLabel
 local waveBtn: TextButton
 local towerButtons: { [string]: TextButton } = {}
+local towerStrokes: { [string]: UIStroke } = {}
 local towerCostLabels: { [string]: TextLabel } = {}
 local inventoryBtn: TextButton
 local inventoryCountLabel: TextLabel
@@ -64,7 +74,7 @@ local homeScreen: Frame
 local gameOverScreen: Frame
 local gameOverLabel: TextLabel
 
--- --- Small builder helpers ---
+-- --- Builder helpers ---
 
 local function makeFrame(parent: Instance, name: string): Frame
 	local f = Instance.new("Frame")
@@ -106,11 +116,13 @@ local function makeTextButton(parent: Instance, name: string, text: string): Tex
 	return b
 end
 
-local function addStroke(inst: GuiObject, color: Color3, thickness: number)
+local function addStroke(inst: GuiObject, color: Color3, thickness: number): UIStroke
 	local stroke = Instance.new("UIStroke")
 	stroke.Color = color
 	stroke.Thickness = thickness
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	stroke.Parent = inst
+	return stroke
 end
 
 local function addCorner(inst: GuiObject, radius: number)
@@ -119,62 +131,137 @@ local function addCorner(inst: GuiObject, radius: number)
 	c.Parent = inst
 end
 
--- --- Section builders ---
-
-local function buildTopBar(parent: Instance)
-	local bar = makeFrame(parent, "TopBar")
-	bar.Size = UDim2.new(1, 0, 0, 52)
-	bar.Position = UDim2.fromScale(0, 0)
-	bar.BackgroundTransparency = 0.2
-
-	local layout = Instance.new("UIListLayout")
-	layout.FillDirection = Enum.FillDirection.Horizontal
-	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	layout.VerticalAlignment = Enum.VerticalAlignment.Center
-	layout.Padding = UDim.new(0, 36)
-	layout.Parent = bar
-
-	local function makeStat(label: string, initial: string): TextLabel
-		local stat = Instance.new("Frame")
-		stat.Size = UDim2.fromOffset(140, 40)
-		stat.BackgroundTransparency = 1
-		stat.Parent = bar
-
-		local lbl = makeTextLabel(stat, "Label", label .. ": ", 18)
-		lbl.Size = UDim2.fromScale(1, 1)
-		lbl.TextXAlignment = Enum.TextXAlignment.Center
-
-		local value = makeTextLabel(stat, "Value", initial, 22)
-		value.TextColor3 = COLOR_ACCENT_BRIGHT
-		value.Size = UDim2.fromScale(1, 1)
-		value.Position = UDim2.fromOffset(0, 0)
-		value.TextXAlignment = Enum.TextXAlignment.Center
-
-		-- Combine via a single label for simplicity; we just mutate the value
-		lbl.Visible = false
-		value.Text = label .. ": " .. initial
-		return value
-	end
-
-	hpLabel = makeStat("HP", tostring(Config.STARTING_HP))
-	goldLabel = makeStat("Gold", tostring(Config.STARTING_GOLD))
-	waveLabel = makeStat("Wave", "0")
-	enemiesLabel = makeStat("Enemies", "0")
+local function addGradient(inst: GuiObject, topColor: Color3, bottomColor: Color3)
+	local g = Instance.new("UIGradient")
+	g.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, topColor),
+		ColorSequenceKeypoint.new(1, bottomColor),
+	})
+	g.Rotation = 90
+	g.Parent = inst
 end
+
+-- --- Section: left side stats panel ---
+
+local function makeStatCard(
+	parent: Instance,
+	order: number,
+	icon: string,
+	name: string,
+	initial: string
+): TextLabel
+	local row = makeFrame(parent, name .. "Card")
+	row.Size = UDim2.new(1, -24, 0, 72)
+	row.Position = UDim2.fromOffset(12, 48 + (order - 1) * 80)
+	row.BackgroundColor3 = COLOR_BG_CARD
+	row.BackgroundTransparency = 0.25
+	addCorner(row, 10)
+	addStroke(row, COLOR_ACCENT, 1)
+
+	local iconLabel = makeTextLabel(row, "Icon", icon, 38)
+	iconLabel.Size = UDim2.fromOffset(64, 72)
+	iconLabel.Position = UDim2.fromOffset(6, 0)
+	iconLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+	local nameLabel = makeTextLabel(row, "Name", name, 11)
+	nameLabel.Font = Enum.Font.GothamMedium
+	nameLabel.TextColor3 = COLOR_TEXT_DIM
+	nameLabel.Size = UDim2.new(1, -80, 0, 16)
+	nameLabel.Position = UDim2.fromOffset(76, 14)
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+	local valueLabel = makeTextLabel(row, "Value", initial, 28)
+	valueLabel.Font = Enum.Font.GothamBlack
+	valueLabel.TextColor3 = COLOR_ACCENT_BRIGHT
+	valueLabel.Size = UDim2.new(1, -80, 0, 36)
+	valueLabel.Position = UDim2.fromOffset(76, 28)
+	valueLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+	return valueLabel
+end
+
+local function buildSidePanel(parent: Instance)
+	local panel = makeFrame(parent, "SidePanel")
+	panel.Size = UDim2.fromOffset(260, 680)
+	panel.Position = UDim2.fromOffset(20, 20)
+	panel.BackgroundTransparency = 0.1
+	addCorner(panel, 14)
+	addStroke(panel, COLOR_ACCENT, 2)
+	addGradient(panel, Color3.fromRGB(30, 20, 12), Color3.fromRGB(18, 12, 6))
+
+	local title = makeTextLabel(panel, "Title", "REALM STATS", 16)
+	title.TextColor3 = COLOR_ACCENT_BRIGHT
+	title.Size = UDim2.new(1, 0, 0, 30)
+	title.Position = UDim2.fromOffset(0, 14)
+	title.TextXAlignment = Enum.TextXAlignment.Center
+
+	statsValues.hp = makeStatCard(panel, 1, "❤️", "HEALTH", tostring(Config.STARTING_HP))
+	statsValues.gold = makeStatCard(panel, 2, "💰", "GOLD", tostring(Config.STARTING_GOLD))
+	statsValues.wave = makeStatCard(panel, 3, "🌊", "WAVE", "0")
+	statsValues.enemies = makeStatCard(panel, 4, "👹", "ENEMIES", "0")
+
+	-- Selected tower info card
+	local card = makeFrame(panel, "SelectedCard")
+	card.Size = UDim2.new(1, -24, 0, 228)
+	card.Position = UDim2.fromOffset(12, 48 + 4 * 80 + 12)
+	card.BackgroundColor3 = COLOR_BG_CARD
+	card.BackgroundTransparency = 0.2
+	addCorner(card, 10)
+	addStroke(card, COLOR_ACCENT_BRIGHT, 2)
+
+	local cardTitle = makeTextLabel(card, "Title", "SELECTED TOWER", 11)
+	cardTitle.Font = Enum.Font.GothamMedium
+	cardTitle.TextColor3 = COLOR_TEXT_DIM
+	cardTitle.Size = UDim2.new(1, 0, 0, 16)
+	cardTitle.Position = UDim2.fromOffset(0, 8)
+	cardTitle.TextXAlignment = Enum.TextXAlignment.Center
+
+	selectedIcon = makeTextLabel(card, "Icon", "🏹", 46)
+	selectedIcon.Size = UDim2.fromOffset(72, 70)
+	selectedIcon.Position = UDim2.fromOffset(8, 28)
+
+	selectedName = makeTextLabel(card, "Name", "Archer Tower", 16)
+	selectedName.TextColor3 = COLOR_ACCENT_BRIGHT
+	selectedName.Size = UDim2.new(1, -90, 0, 22)
+	selectedName.Position = UDim2.fromOffset(80, 30)
+	selectedName.TextXAlignment = Enum.TextXAlignment.Left
+
+	selectedCost = makeTextLabel(card, "Cost", "40 gold", 15)
+	selectedCost.Font = Enum.Font.GothamBold
+	selectedCost.TextColor3 = COLOR_GOLD_TEXT
+	selectedCost.Size = UDim2.new(1, -90, 0, 20)
+	selectedCost.Position = UDim2.fromOffset(80, 54)
+	selectedCost.TextXAlignment = Enum.TextXAlignment.Left
+
+	selectedStats = makeTextLabel(card, "Stats", "", 13)
+	selectedStats.Font = Enum.Font.Gotham
+	selectedStats.TextColor3 = COLOR_TEXT
+	selectedStats.RichText = true
+	selectedStats.TextXAlignment = Enum.TextXAlignment.Left
+	selectedStats.TextYAlignment = Enum.TextYAlignment.Top
+	selectedStats.TextWrapped = true
+	selectedStats.Size = UDim2.new(1, -20, 0, 110)
+	selectedStats.Position = UDim2.fromOffset(10, 108)
+end
+
+-- --- Section: tower panel (bottom center) ---
 
 local function buildTowerPanel(parent: Instance)
 	local panel = makeFrame(parent, "TowerPanel")
-	panel.Size = UDim2.fromOffset(7 * 90 + 10, 100)
-	panel.Position = UDim2.new(0.5, -(7 * 90 + 10) / 2, 1, -120)
-	panel.BackgroundTransparency = 0.3
-	addCorner(panel, 10)
+	local btnWidth = 94
+	local btnGap = 8
+	local totalW = #TOWER_ORDER * btnWidth + (#TOWER_ORDER - 1) * btnGap + 24
+	panel.Size = UDim2.fromOffset(totalW, 120)
+	panel.Position = UDim2.new(0.5, -totalW / 2, 1, -140)
+	panel.BackgroundTransparency = 0.2
+	addCorner(panel, 12)
 	addStroke(panel, COLOR_ACCENT, 2)
 
 	local layout = Instance.new("UIListLayout")
 	layout.FillDirection = Enum.FillDirection.Horizontal
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.VerticalAlignment = Enum.VerticalAlignment.Center
-	layout.Padding = UDim.new(0, 6)
+	layout.Padding = UDim.new(0, btnGap)
 	layout.Parent = panel
 
 	for _, towerType in TOWER_ORDER do
@@ -184,31 +271,27 @@ local function buildTowerPanel(parent: Instance)
 		end
 
 		local btn = makeTextButton(panel, "Btn_" .. towerType, "")
-		btn.Size = UDim2.fromOffset(84, 86)
-		btn.BackgroundColor3 = COLOR_BG_DARK
-		btn.BackgroundTransparency = 0.3
-		addCorner(btn, 8)
-		addStroke(btn, COLOR_ACCENT, 1)
+		btn.Size = UDim2.fromOffset(btnWidth, 100)
+		btn.BackgroundColor3 = COLOR_BG_CARD
+		btn.BackgroundTransparency = 0.25
+		addCorner(btn, 10)
+		local stroke = addStroke(btn, COLOR_ACCENT, 1)
 
-		local icon = makeTextLabel(btn, "Icon", def.icon, 30)
-		icon.Size = UDim2.new(1, 0, 0, 36)
-		icon.Position = UDim2.fromOffset(0, 6)
+		local icon = makeTextLabel(btn, "Icon", def.icon, 36)
+		icon.Size = UDim2.new(1, 0, 0, 44)
+		icon.Position = UDim2.fromOffset(0, 8)
 		icon.TextXAlignment = Enum.TextXAlignment.Center
 
-		local name = makeTextLabel(
-			btn,
-			"Name",
-			def.name:gsub(" Tower", ""):gsub(" Bunker", ""):gsub(" Spire", ""),
-			12
-		)
-		name.Size = UDim2.new(1, 0, 0, 16)
-		name.Position = UDim2.fromOffset(0, 44)
+		local short = def.name:gsub(" Tower", ""):gsub(" Bunker", ""):gsub(" Spire", "")
+		local name = makeTextLabel(btn, "Name", short, 12)
+		name.Size = UDim2.new(1, 0, 0, 18)
+		name.Position = UDim2.fromOffset(0, 54)
 		name.TextXAlignment = Enum.TextXAlignment.Center
 
-		local cost = makeTextLabel(btn, "Cost", string.format("%dg", def.cost), 13)
+		local cost = makeTextLabel(btn, "Cost", string.format("%dg", def.cost), 14)
 		cost.TextColor3 = COLOR_GOLD_TEXT
-		cost.Size = UDim2.new(1, 0, 0, 16)
-		cost.Position = UDim2.fromOffset(0, 62)
+		cost.Size = UDim2.new(1, 0, 0, 18)
+		cost.Position = UDim2.fromOffset(0, 74)
 		cost.TextXAlignment = Enum.TextXAlignment.Center
 
 		btn.Activated:Connect(function()
@@ -216,18 +299,21 @@ local function buildTowerPanel(parent: Instance)
 		end)
 
 		towerButtons[towerType] = btn
+		towerStrokes[towerType] = stroke
 		towerCostLabels[towerType] = cost
 	end
 end
 
+-- --- Section: wave button ---
+
 local function buildWaveButton(parent: Instance)
-	waveBtn = makeTextButton(parent, "WaveBtn", "Start Wave 1")
-	waveBtn.Size = UDim2.fromOffset(220, 48)
-	waveBtn.Position = UDim2.new(0.5, -110, 1, -230)
+	waveBtn = makeTextButton(parent, "WaveBtn", "START WAVE 1")
+	waveBtn.Size = UDim2.fromOffset(260, 54)
+	waveBtn.Position = UDim2.new(0.5, -130, 1, -280)
 	waveBtn.BackgroundColor3 = Color3.fromRGB(76, 175, 80)
-	waveBtn.BackgroundTransparency = 0.25
-	waveBtn.TextSize = 18
-	addCorner(waveBtn, 8)
+	waveBtn.BackgroundTransparency = 0.2
+	waveBtn.TextSize = 20
+	addCorner(waveBtn, 10)
 	addStroke(waveBtn, Color3.fromRGB(165, 214, 167), 2)
 
 	waveBtn.Activated:Connect(function()
@@ -235,54 +321,56 @@ local function buildWaveButton(parent: Instance)
 	end)
 end
 
+-- --- Section: inventory (backpack + panel) ---
+
 local function buildInventory(parent: Instance)
-	-- Backpack button (top right, below top bar)
 	inventoryBtn = makeTextButton(parent, "InventoryBtn", "🎒")
-	inventoryBtn.Size = UDim2.fromOffset(60, 60)
-	inventoryBtn.Position = UDim2.new(1, -80, 0, 70)
-	inventoryBtn.TextSize = 32
-	inventoryBtn.BackgroundTransparency = 0.15
-	addCorner(inventoryBtn, 10)
+	inventoryBtn.Size = UDim2.fromOffset(64, 64)
+	inventoryBtn.Position = UDim2.new(1, -84, 0, 20)
+	inventoryBtn.TextSize = 36
+	inventoryBtn.BackgroundColor3 = COLOR_BG_DARK
+	inventoryBtn.BackgroundTransparency = 0.1
+	addCorner(inventoryBtn, 12)
 	addStroke(inventoryBtn, COLOR_ACCENT, 2)
 
 	local badge = Instance.new("Frame")
 	badge.Name = "Count"
-	badge.Size = UDim2.fromOffset(24, 24)
+	badge.Size = UDim2.fromOffset(26, 26)
 	badge.Position = UDim2.fromOffset(-8, -8)
 	badge.BackgroundColor3 = Color3.fromRGB(198, 40, 40)
 	badge.BorderSizePixel = 0
 	badge.Parent = inventoryBtn
-	addCorner(badge, 12)
+	addCorner(badge, 13)
 	addStroke(badge, Color3.fromRGB(255, 255, 255), 2)
 
-	inventoryCountLabel = makeTextLabel(badge, "Count", "0", 13)
+	inventoryCountLabel = makeTextLabel(badge, "Count", "0", 14)
 	inventoryCountLabel.Size = UDim2.fromScale(1, 1)
 	inventoryCountLabel.TextXAlignment = Enum.TextXAlignment.Center
 	inventoryCountLabel.TextColor3 = COLOR_TEXT
 
-	-- Inventory panel (slides in from the right)
 	inventoryPanel = makeFrame(parent, "InventoryPanel")
-	inventoryPanel.Size = UDim2.fromOffset(320, 520)
-	inventoryPanel.Position = UDim2.new(1, -340, 0, 140)
+	inventoryPanel.Size = UDim2.fromOffset(320, 560)
+	inventoryPanel.Position = UDim2.new(1, -340, 0, 100)
 	inventoryPanel.BackgroundTransparency = 0.1
 	inventoryPanel.Visible = false
-	addCorner(inventoryPanel, 12)
+	addCorner(inventoryPanel, 14)
 	addStroke(inventoryPanel, COLOR_ACCENT, 2)
+	addGradient(inventoryPanel, Color3.fromRGB(30, 20, 12), Color3.fromRGB(18, 12, 6))
 
 	local title = makeTextLabel(inventoryPanel, "Title", "INVENTORY", 18)
-	title.Size = UDim2.new(1, 0, 0, 36)
-	title.Position = UDim2.fromOffset(0, 10)
 	title.TextColor3 = COLOR_ACCENT_BRIGHT
+	title.Size = UDim2.new(1, 0, 0, 36)
+	title.Position = UDim2.fromOffset(0, 12)
 	title.TextXAlignment = Enum.TextXAlignment.Center
 
 	inventoryList = makeFrame(inventoryPanel, "List")
-	inventoryList.Size = UDim2.new(1, -20, 1, -60)
-	inventoryList.Position = UDim2.fromOffset(10, 50)
+	inventoryList.Size = UDim2.new(1, -24, 1, -64)
+	inventoryList.Position = UDim2.fromOffset(12, 52)
 	inventoryList.BackgroundTransparency = 1
 
 	local listLayout = Instance.new("UIListLayout")
 	listLayout.FillDirection = Enum.FillDirection.Vertical
-	listLayout.Padding = UDim.new(0, 6)
+	listLayout.Padding = UDim.new(0, 8)
 	listLayout.Parent = inventoryList
 
 	inventoryBtn.Activated:Connect(function()
@@ -290,47 +378,51 @@ local function buildInventory(parent: Instance)
 	end)
 end
 
+-- --- Section: controls hint ---
+
 local function buildControlsHint(parent: Instance)
 	local hint = makeFrame(parent, "ControlsHint")
-	hint.Size = UDim2.fromOffset(340, 60)
-	hint.Position = UDim2.new(0, 20, 1, -80)
+	hint.Size = UDim2.fromOffset(380, 60)
+	hint.Position = UDim2.new(1, -400, 1, -80)
 	hint.BackgroundTransparency = 0.35
-	addCorner(hint, 6)
+	addCorner(hint, 8)
 	addStroke(hint, COLOR_ACCENT, 1)
 
-	local text = makeTextLabel(hint, "Text", "", 12)
+	local text = makeTextLabel(hint, "Text", "", 13)
 	text.Size = UDim2.new(1, -20, 1, -16)
 	text.Position = UDim2.fromOffset(10, 8)
-	text.Font = Enum.Font.Gotham
+	text.Font = Enum.Font.GothamMedium
 	text.RichText = true
 	text.TextWrapped = true
 	text.TextXAlignment = Enum.TextXAlignment.Left
-	text.TextYAlignment = Enum.TextYAlignment.Top
-	text.Text =
-		"<b>L-click</b> Place  •  <b>R-click</b> Pick up\n<b>Tab</b> Explore/Overview  •  <b>Scroll</b> Zoom"
+	text.TextYAlignment = Enum.TextYAlignment.Center
+	text.Text = "<b>L-click</b> Place  ·  <b>R-click</b> Pick up  ·  <b>Tab</b> Explore/Overview"
 end
+
+-- --- Section: home screen ---
 
 local function buildHomeScreen(parent: Instance)
 	homeScreen = makeFrame(parent, "HomeScreen")
 	homeScreen.Size = UDim2.fromScale(1, 1)
 	homeScreen.BackgroundColor3 = Color3.fromRGB(8, 4, 2)
-	homeScreen.BackgroundTransparency = 0.1
+	homeScreen.BackgroundTransparency = 0.05
 	homeScreen.ZIndex = 100
 
 	local card = makeFrame(homeScreen, "Card")
-	card.Size = UDim2.fromOffset(680, 480)
-	card.Position = UDim2.new(0.5, -340, 0.5, -240)
+	card.Size = UDim2.fromOffset(720, 500)
+	card.Position = UDim2.new(0.5, -360, 0.5, -250)
 	card.BackgroundColor3 = Color3.fromRGB(30, 20, 12)
-	card.BackgroundTransparency = 0.08
+	card.BackgroundTransparency = 0.05
 	card.ZIndex = 101
-	addCorner(card, 14)
-	addStroke(card, COLOR_ACCENT, 2)
+	addCorner(card, 16)
+	addStroke(card, COLOR_ACCENT, 3)
+	addGradient(card, Color3.fromRGB(44, 28, 14), Color3.fromRGB(18, 10, 4))
 
-	local title = makeTextLabel(card, "Title", "REALM DEFENSE", 56)
+	local title = makeTextLabel(card, "Title", "REALM DEFENSE", 62)
+	title.Font = Enum.Font.GothamBlack
 	title.Size = UDim2.new(1, 0, 0, 80)
-	title.Position = UDim2.fromOffset(0, 60)
+	title.Position = UDim2.fromOffset(0, 70)
 	title.TextColor3 = COLOR_ACCENT_BRIGHT
-	title.TextXAlignment = Enum.TextXAlignment.Center
 	title.ZIndex = 102
 
 	local subtitle = makeTextLabel(
@@ -340,34 +432,34 @@ local function buildHomeScreen(parent: Instance)
 		16
 	)
 	subtitle.Font = Enum.Font.GothamMedium
-	subtitle.TextColor3 = Color3.fromRGB(201, 166, 120)
+	subtitle.TextColor3 = COLOR_TEXT_DIM
 	subtitle.Size = UDim2.new(1, -40, 0, 24)
-	subtitle.Position = UDim2.fromOffset(20, 160)
+	subtitle.Position = UDim2.fromOffset(20, 170)
 	subtitle.TextXAlignment = Enum.TextXAlignment.Center
 	subtitle.ZIndex = 102
 
 	local playBtn = makeTextButton(card, "PlayBtn", "PLAY")
-	playBtn.Size = UDim2.fromOffset(220, 64)
-	playBtn.Position = UDim2.new(0.5, -110, 0, 220)
-	playBtn.TextSize = 28
+	playBtn.Size = UDim2.fromOffset(240, 72)
+	playBtn.Position = UDim2.new(0.5, -120, 0, 240)
+	playBtn.TextSize = 32
 	playBtn.BackgroundColor3 = Color3.fromRGB(109, 58, 16)
 	playBtn.ZIndex = 102
-	addCorner(playBtn, 8)
-	addStroke(playBtn, COLOR_ACCENT_BRIGHT, 2)
+	addCorner(playBtn, 10)
+	addStroke(playBtn, COLOR_ACCENT_BRIGHT, 3)
+	addGradient(playBtn, Color3.fromRGB(160, 90, 30), Color3.fromRGB(80, 40, 10))
 
 	local hint = makeTextLabel(
 		card,
 		"Hint",
-		"<b>L-click</b> Place tower  •  <b>R-click</b> Pick up  •  <b>Tab</b> Switch to explore mode",
-		13
+		"<b>L-click</b> Place tower  ·  <b>R-click</b> Pick up  ·  <b>Tab</b> Switch to explore mode",
+		14
 	)
-	hint.Font = Enum.Font.Gotham
+	hint.Font = Enum.Font.GothamMedium
 	hint.RichText = true
-	hint.Size = UDim2.new(1, -40, 0, 50)
-	hint.Position = UDim2.fromOffset(20, 340)
-	hint.TextColor3 = Color3.fromRGB(168, 151, 120)
+	hint.Size = UDim2.new(1, -40, 0, 24)
+	hint.Position = UDim2.fromOffset(20, 370)
+	hint.TextColor3 = COLOR_TEXT_DIM
 	hint.TextXAlignment = Enum.TextXAlignment.Center
-	hint.TextWrapped = true
 	hint.ZIndex = 102
 
 	playBtn.Activated:Connect(function()
@@ -378,6 +470,8 @@ local function buildHomeScreen(parent: Instance)
 	end)
 end
 
+-- --- Section: game over screen ---
+
 local function buildGameOverScreen(parent: Instance)
 	gameOverScreen = makeFrame(parent, "GameOverScreen")
 	gameOverScreen.Size = UDim2.fromScale(1, 1)
@@ -387,14 +481,15 @@ local function buildGameOverScreen(parent: Instance)
 	gameOverScreen.ZIndex = 200
 
 	local card = makeFrame(gameOverScreen, "Card")
-	card.Size = UDim2.fromOffset(520, 320)
-	card.Position = UDim2.new(0.5, -260, 0.5, -160)
+	card.Size = UDim2.fromOffset(560, 340)
+	card.Position = UDim2.new(0.5, -280, 0.5, -170)
 	card.BackgroundColor3 = Color3.fromRGB(30, 15, 10)
 	card.ZIndex = 201
-	addCorner(card, 14)
-	addStroke(card, COLOR_DANGER, 2)
+	addCorner(card, 16)
+	addStroke(card, COLOR_DANGER, 3)
 
-	local title = makeTextLabel(card, "Title", "GAME OVER", 52)
+	local title = makeTextLabel(card, "Title", "GAME OVER", 56)
+	title.Font = Enum.Font.GothamBlack
 	title.Size = UDim2.new(1, 0, 0, 72)
 	title.Position = UDim2.fromOffset(0, 40)
 	title.TextColor3 = COLOR_DANGER
@@ -404,17 +499,17 @@ local function buildGameOverScreen(parent: Instance)
 	gameOverLabel = makeTextLabel(card, "Subtitle", "You survived 0 waves.", 18)
 	gameOverLabel.Font = Enum.Font.GothamMedium
 	gameOverLabel.Size = UDim2.new(1, 0, 0, 30)
-	gameOverLabel.Position = UDim2.fromOffset(0, 140)
+	gameOverLabel.Position = UDim2.fromOffset(0, 150)
 	gameOverLabel.TextXAlignment = Enum.TextXAlignment.Center
 	gameOverLabel.ZIndex = 202
 
 	local restartBtn = makeTextButton(card, "RestartBtn", "PLAY AGAIN")
-	restartBtn.Size = UDim2.fromOffset(200, 56)
-	restartBtn.Position = UDim2.new(0.5, -100, 0, 200)
+	restartBtn.Size = UDim2.fromOffset(220, 60)
+	restartBtn.Position = UDim2.new(0.5, -110, 0, 220)
 	restartBtn.TextSize = 22
 	restartBtn.BackgroundColor3 = Color3.fromRGB(109, 58, 16)
 	restartBtn.ZIndex = 202
-	addCorner(restartBtn, 8)
+	addCorner(restartBtn, 10)
 	addStroke(restartBtn, COLOR_ACCENT_BRIGHT, 2)
 
 	restartBtn.Activated:Connect(function()
@@ -425,38 +520,87 @@ end
 
 -- --- Updates ---
 
-local function updateTopBar()
-	hpLabel.Text = "HP: " .. currentState.hp
-	goldLabel.Text = "Gold: " .. currentState.gold
-	waveLabel.Text = "Wave: " .. currentState.waveNum
+local function updateStats()
+	statsValues.hp.Text = tostring(currentState.hp)
+	statsValues.gold.Text = tostring(currentState.gold)
+	statsValues.wave.Text = tostring(currentState.waveNum)
+end
+
+local function formatStats(def): string
+	local parts = {}
+	table.insert(parts, string.format("🎯 <b>Damage</b>  %d", def.damage))
+	table.insert(parts, string.format("📏 <b>Range</b>   %d", def.range))
+	table.insert(parts, string.format("⚡ <b>Fire rate</b> %.1f/s", def.fireRate))
+	if def.splash and def.splash > 0 then
+		table.insert(parts, string.format("💥 <b>Splash</b>  %d", def.splash))
+	end
+	if def.slowFactor then
+		table.insert(
+			parts,
+			string.format("❄️ <b>Slow</b>    %d%%", math.floor((1 - def.slowFactor) * 100))
+		)
+	end
+	if def.poisonDps then
+		table.insert(parts, string.format("🧪 <b>Poison</b>  %d/s", def.poisonDps))
+	end
+	if def.chain then
+		table.insert(parts, string.format("⚡ <b>Chains to</b> %d", def.chain + 1))
+	end
+	return table.concat(parts, "\n")
+end
+
+local function updateSelectedInfo()
+	local def = TowerDefs[selection.towerType]
+	if not def then
+		return
+	end
+	selectedIcon.Text = def.icon
+	selectedName.Text = def.name
+	if selection.fromInventoryIndex >= 0 then
+		selectedCost.Text = "FREE (from inventory)"
+		selectedCost.TextColor3 = COLOR_ACCENT_BRIGHT
+	else
+		selectedCost.Text = def.cost .. " gold"
+		selectedCost.TextColor3 = COLOR_GOLD_TEXT
+	end
+	selectedStats.Text = formatStats(def)
 end
 
 local function updateTowerButtons()
 	for towerType, btn in towerButtons do
 		local def = TowerDefs[towerType]
 		local canAfford = currentState.gold >= def.cost
-		local stroke = btn:FindFirstChildOfClass("UIStroke")
-		if stroke then
-			if selection.fromInventoryIndex < 0 and selection.towerType == towerType then
-				stroke.Color = COLOR_ACCENT_BRIGHT
-				stroke.Thickness = 3
-			else
-				stroke.Color = COLOR_ACCENT
-				stroke.Thickness = 1
-			end
+		local stroke = towerStrokes[towerType]
+		local isSelected = (selection.fromInventoryIndex < 0 and selection.towerType == towerType)
+
+		if isSelected then
+			-- Swap colors so the selection is impossible to miss
+			btn.BackgroundColor3 = COLOR_ACCENT_BRIGHT
+			btn.BackgroundTransparency = 0
+			stroke.Color = Color3.fromRGB(255, 240, 200)
+			stroke.Thickness = 4
+			btn:FindFirstChild("Name").TextColor3 = Color3.fromRGB(40, 25, 10)
+			btn:FindFirstChild("Icon").TextColor3 = Color3.fromRGB(40, 25, 10)
+			towerCostLabels[towerType].TextColor3 = Color3.fromRGB(80, 50, 10)
+		else
+			btn.BackgroundColor3 = COLOR_BG_CARD
+			btn.BackgroundTransparency = canAfford and 0.25 or 0.55
+			stroke.Color = COLOR_ACCENT
+			stroke.Thickness = 1
+			btn:FindFirstChild("Name").TextColor3 = COLOR_TEXT
+			btn:FindFirstChild("Icon").TextColor3 = COLOR_TEXT
+			towerCostLabels[towerType].TextColor3 = canAfford and COLOR_GOLD_TEXT or COLOR_DANGER
 		end
-		btn.BackgroundTransparency = canAfford and 0.3 or 0.6
-		towerCostLabels[towerType].TextColor3 = canAfford and COLOR_GOLD_TEXT or COLOR_DANGER
 	end
 end
 
 local function updateWaveButton()
 	if currentState.waveActive then
-		waveBtn.Text = "Wave " .. currentState.waveNum .. " in progress"
+		waveBtn.Text = "WAVE " .. currentState.waveNum .. " IN PROGRESS"
 		waveBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
 		waveBtn.AutoButtonColor = false
 	else
-		waveBtn.Text = "Start Wave " .. (currentState.waveNum + 1)
+		waveBtn.Text = "START WAVE " .. (currentState.waveNum + 1)
 		waveBtn.BackgroundColor3 = Color3.fromRGB(76, 175, 80)
 		waveBtn.AutoButtonColor = true
 	end
@@ -465,9 +609,6 @@ end
 local function updateInventory()
 	inventoryCountLabel.Text = tostring(#currentState.inventory)
 
-	-- Clear every GuiObject child (Frames, TextButtons, and — crucially —
-	-- any leftover "empty" TextLabel). UIListLayout is a UIBase, not a
-	-- GuiObject, so it is preserved.
 	for _, child in inventoryList:GetChildren() do
 		if child:IsA("GuiObject") then
 			child:Destroy()
@@ -478,7 +619,7 @@ local function updateInventory()
 		local empty = makeTextLabel(inventoryList, "Empty", "Right-click a tower to pick it up", 13)
 		empty.Font = Enum.Font.GothamMedium
 		empty.Size = UDim2.new(1, 0, 0, 40)
-		empty.TextColor3 = Color3.fromRGB(119, 102, 85)
+		empty.TextColor3 = COLOR_TEXT_DIM
 		return
 	end
 
@@ -490,10 +631,10 @@ local function updateInventory()
 		local refund = math.floor(item.cost * Config.SELL_RATIO)
 
 		local slot = makeFrame(inventoryList, "Slot_" .. idx)
-		slot.Size = UDim2.new(1, 0, 0, 60)
-		slot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-		slot.BackgroundTransparency = 0.95
-		addCorner(slot, 6)
+		slot.Size = UDim2.new(1, 0, 0, 68)
+		slot.BackgroundColor3 = COLOR_BG_CARD
+		slot.BackgroundTransparency = 0.3
+		addCorner(slot, 8)
 
 		local slotStroke = Instance.new("UIStroke")
 		slotStroke.Color = (idx == selection.fromInventoryIndex) and COLOR_ACCENT_BRIGHT
@@ -501,43 +642,42 @@ local function updateInventory()
 		slotStroke.Thickness = (idx == selection.fromInventoryIndex) and 3 or 1
 		slotStroke.Parent = slot
 
-		local icon = makeTextLabel(slot, "Icon", def.icon, 26)
-		icon.Size = UDim2.fromOffset(40, 60)
-		icon.Position = UDim2.fromOffset(8, 0)
+		local icon = makeTextLabel(slot, "Icon", def.icon, 32)
+		icon.Size = UDim2.fromOffset(56, 68)
+		icon.Position = UDim2.fromOffset(6, 0)
 		icon.TextXAlignment = Enum.TextXAlignment.Center
 
-		local name = makeTextLabel(slot, "Name", def.name, 14)
-		name.Size = UDim2.fromOffset(160, 24)
-		name.Position = UDim2.fromOffset(54, 8)
+		local name = makeTextLabel(slot, "Name", def.name, 15)
+		name.Size = UDim2.fromOffset(170, 26)
+		name.Position = UDim2.fromOffset(64, 10)
 		name.TextColor3 = COLOR_ACCENT_BRIGHT
 		name.TextXAlignment = Enum.TextXAlignment.Left
 
 		local info = makeTextLabel(
 			slot,
 			"Info",
-			string.format("Cost: %dg  •  Refund: %dg", item.cost, refund),
+			string.format("Cost %dg · Refund %dg", item.cost, refund),
 			11
 		)
 		info.Font = Enum.Font.Gotham
-		info.Size = UDim2.fromOffset(180, 20)
-		info.Position = UDim2.fromOffset(54, 30)
-		info.TextColor3 = Color3.fromRGB(168, 151, 120)
+		info.Size = UDim2.fromOffset(180, 18)
+		info.Position = UDim2.fromOffset(64, 36)
+		info.TextColor3 = COLOR_TEXT_DIM
 		info.TextXAlignment = Enum.TextXAlignment.Left
 
 		local sellBtn = makeTextButton(slot, "Sell", "Sell +" .. refund .. "g")
-		sellBtn.Size = UDim2.fromOffset(80, 36)
-		sellBtn.Position = UDim2.new(1, -90, 0.5, -18)
+		sellBtn.Size = UDim2.fromOffset(84, 40)
+		sellBtn.Position = UDim2.new(1, -94, 0.5, -20)
 		sellBtn.TextSize = 12
 		sellBtn.BackgroundColor3 = Color3.fromRGB(109, 58, 16)
-		addCorner(sellBtn, 5)
+		addCorner(sellBtn, 6)
 		addStroke(sellBtn, COLOR_ACCENT_BRIGHT, 1)
 
-		-- Wrap in a button so the whole slot is clickable for selection
 		local selectBtn = Instance.new("TextButton")
 		selectBtn.Name = "SelectArea"
 		selectBtn.Text = ""
 		selectBtn.BackgroundTransparency = 1
-		selectBtn.Size = UDim2.new(1, -100, 1, 0)
+		selectBtn.Size = UDim2.new(1, -104, 1, 0)
 		selectBtn.Position = UDim2.fromOffset(0, 0)
 		selectBtn.ZIndex = 5
 		selectBtn.Parent = slot
@@ -562,7 +702,7 @@ function Hud.mount(onStarted: () -> ())
 	screen.IgnoreGuiInset = true
 	screen.Parent = playerGui
 
-	buildTopBar(screen)
+	buildSidePanel(screen)
 	buildTowerPanel(screen)
 	buildWaveButton(screen)
 	buildInventory(screen)
@@ -570,23 +710,24 @@ function Hud.mount(onStarted: () -> ())
 	buildGameOverScreen(screen)
 	buildHomeScreen(screen)
 
-	updateTopBar()
+	updateStats()
 	updateTowerButtons()
 	updateWaveButton()
 	updateInventory()
+	updateSelectedInfo()
 end
 
 function Hud.onStateUpdate(state)
 	currentState = state
-	updateTopBar()
+	updateStats()
 	updateTowerButtons()
 	updateWaveButton()
 	updateInventory()
-	enemiesLabel.Text = "Enemies: " .. (#currentState.inventory == 0 and "0" or "0")
+	updateSelectedInfo()
 end
 
 function Hud.onLiveEnemyCount(count: number)
-	enemiesLabel.Text = "Enemies: " .. count
+	statsValues.enemies.Text = tostring(count)
 end
 
 function Hud.showGameOver()
@@ -600,6 +741,7 @@ function Hud.selectTower(towerType: string)
 	lastPanelTower = towerType
 	updateTowerButtons()
 	updateInventory()
+	updateSelectedInfo()
 end
 
 function Hud.selectFromInventory(idx: number)
@@ -615,6 +757,7 @@ function Hud.selectFromInventory(idx: number)
 	selection.fromInventoryIndex = idx
 	updateTowerButtons()
 	updateInventory()
+	updateSelectedInfo()
 end
 
 function Hud.getSelection(): Selection
@@ -626,6 +769,7 @@ function Hud.revertPanelSelection()
 	selection.towerType = lastPanelTower
 	updateTowerButtons()
 	updateInventory()
+	updateSelectedInfo()
 end
 
 function Hud.isGameOver(): boolean

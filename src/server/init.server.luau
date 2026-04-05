@@ -17,8 +17,11 @@ local EnemyManager = require(script.EnemyManager)
 local TowerManager = require(script.TowerManager)
 local GameState = require(script.GameState)
 local WaveController = require(script.WaveController)
+local LightingSetup = require(script.LightingSetup)
 
 print("[TowerDefense] Server booting")
+
+LightingSetup.apply()
 
 local mapData = Map.build()
 EnemyManager.init(mapData.waypoints)

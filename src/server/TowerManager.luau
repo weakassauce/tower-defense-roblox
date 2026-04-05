@@ -40,58 +40,473 @@ local projectiles: { Projectile } = {}
 local towerFolder: Folder? = nil
 local projectileFolder: Folder? = nil
 
--- --- Tower model builder ---
--- First-pass tower: flat stone base + colored body + glowing orb on top.
--- We'll add per-type composite models in a later pass.
+-- --- Tower model builders ---
+-- Each tower type has a distinctive silhouette built from primitive parts.
+-- All builders return (model, focusPart) where focusPart is the visually
+-- prominent "turret" piece that the TowerManager rotates to face enemies.
 
-local function buildTowerModel(def: TowerDefs.TowerDef, pos: Vector3): (Model, Part)
+-- Small primitive helpers ----------------------------------------------------
+
+local function makeBlock(
+	parent: Instance,
+	name: string,
+	size: Vector3,
+	cf: CFrame,
+	color: Color3,
+	material: Enum.Material
+): Part
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Size = size
+	p.CFrame = cf
+	p.Color = color
+	p.Material = material
+	p.Anchored = true
+	p.CanCollide = false
+	p.CastShadow = true
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	p.Parent = parent
+	return p
+end
+
+local function makeCylinder(
+	parent: Instance,
+	name: string,
+	diameter: number,
+	height: number,
+	cf: CFrame,
+	color: Color3,
+	material: Enum.Material
+): Part
+	local p = makeBlock(parent, name, Vector3.new(diameter, height, diameter), cf, color, material)
+	local mesh = Instance.new("CylinderMesh")
+	mesh.Parent = p
+	return p
+end
+
+local function makeSphere(
+	parent: Instance,
+	name: string,
+	diameter: number,
+	pos: Vector3,
+	color: Color3,
+	material: Enum.Material
+): Part
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Shape = Enum.PartType.Ball
+	p.Size = Vector3.new(diameter, diameter, diameter)
+	p.Position = pos
+	p.Color = color
+	p.Material = material
+	p.Anchored = true
+	p.CanCollide = false
+	p.CastShadow = true
+	p.Parent = parent
+	return p
+end
+
+local function addPointLight(part: Part, color: Color3, range: number, brightness: number)
+	local l = Instance.new("PointLight")
+	l.Color = color
+	l.Range = range
+	l.Brightness = brightness
+	l.Parent = part
+end
+
+-- Per-type builders ----------------------------------------------------------
+
+local function buildArcher(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	local cx, cz = pos.X, pos.Z
+	local stone = Color3.fromRGB(158, 158, 158)
+	local stoneDark = Color3.fromRGB(97, 97, 97)
+
+	makeBlock(
+		model,
+		"Base",
+		Vector3.new(6, 1.5, 6),
+		CFrame.new(cx, 0.75, cz),
+		stoneDark,
+		Enum.Material.Slate
+	)
+	local body = makeBlock(
+		model,
+		"Body",
+		Vector3.new(4, 7, 4),
+		CFrame.new(cx, 5, cz),
+		stone,
+		Enum.Material.Brick
+	)
+
+	-- Crenellation blocks at the 4 corners of the top
+	for _, offset in { { -1.5, -1.5 }, { 1.5, -1.5 }, { -1.5, 1.5 }, { 1.5, 1.5 } } do
+		makeBlock(
+			model,
+			"Crenel",
+			Vector3.new(1, 1.4, 1),
+			CFrame.new(cx + offset[1], 9.2, cz + offset[2]),
+			stoneDark,
+			Enum.Material.Brick
+		)
+	end
+
+	-- Flag pole + flag
+	makeBlock(
+		model,
+		"Pole",
+		Vector3.new(0.3, 3, 0.3),
+		CFrame.new(cx, 10.5, cz),
+		Color3.fromRGB(78, 52, 46),
+		Enum.Material.Wood
+	)
+	makeBlock(
+		model,
+		"Flag",
+		Vector3.new(2.2, 1.2, 0.1),
+		CFrame.new(cx + 1.1, 11.2, cz),
+		def.accent,
+		Enum.Material.Fabric
+	)
+
+	return body
+end
+
+local function buildWizard(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	local cx, cz = pos.X, pos.Z
+	local stone = Color3.fromRGB(120, 144, 156)
+
+	makeCylinder(
+		model,
+		"Base",
+		7,
+		1.6,
+		CFrame.new(cx, 0.8, cz),
+		Color3.fromRGB(69, 90, 100),
+		Enum.Material.Slate
+	)
+	makeCylinder(model, "Body1", 5, 4, CFrame.new(cx, 3.6, cz), stone, Enum.Material.Brick)
+	makeCylinder(model, "Body2", 4, 3, CFrame.new(cx, 7.2, cz), stone, Enum.Material.Brick)
+	-- Decorative ring
+	makeCylinder(
+		model,
+		"Ring",
+		5.5,
+		0.4,
+		CFrame.new(cx, 5.4, cz),
+		Color3.fromRGB(69, 90, 100),
+		Enum.Material.Slate
+	)
+
+	-- Glowing orb
+	local orb =
+		makeSphere(model, "Orb", 2.6, Vector3.new(cx, 10, cz), def.accent, Enum.Material.Neon)
+	addPointLight(orb, def.accent, 16, 3)
+
+	-- Tip
+	makeSphere(model, "Finial", 0.8, Vector3.new(cx, 11.8, cz), def.accent, Enum.Material.Neon)
+
+	return orb
+end
+
+local function buildCannon(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	local cx, cz = pos.X, pos.Z
+	local wood = Color3.fromRGB(93, 64, 55)
+	local woodDark = Color3.fromRGB(62, 39, 35)
+	local iron = Color3.fromRGB(33, 33, 33)
+
+	makeBlock(
+		model,
+		"Base",
+		Vector3.new(6.5, 1.5, 6.5),
+		CFrame.new(cx, 0.75, cz),
+		Color3.fromRGB(97, 97, 97),
+		Enum.Material.Slate
+	)
+	makeBlock(
+		model,
+		"Deck",
+		Vector3.new(5.5, 0.6, 5.5),
+		CFrame.new(cx, 1.8, cz),
+		wood,
+		Enum.Material.Wood
+	)
+
+	-- Short bunker walls (4 sides)
+	makeBlock(
+		model,
+		"WallN",
+		Vector3.new(5, 2, 0.6),
+		CFrame.new(cx, 3.1, cz - 2.4),
+		woodDark,
+		Enum.Material.Wood
+	)
+	makeBlock(
+		model,
+		"WallS",
+		Vector3.new(5, 2, 0.6),
+		CFrame.new(cx, 3.1, cz + 2.4),
+		woodDark,
+		Enum.Material.Wood
+	)
+	makeBlock(
+		model,
+		"WallE",
+		Vector3.new(0.6, 2, 5),
+		CFrame.new(cx + 2.4, 3.1, cz),
+		woodDark,
+		Enum.Material.Wood
+	)
+	makeBlock(
+		model,
+		"WallW",
+		Vector3.new(0.6, 2, 5),
+		CFrame.new(cx - 2.4, 3.1, cz),
+		woodDark,
+		Enum.Material.Wood
+	)
+
+	-- Cannon barrel lying flat, extending forward along -Z
+	local barrel = makeBlock(
+		model,
+		"Barrel",
+		Vector3.new(1.8, 1.6, 5),
+		CFrame.new(cx, 4.6, cz - 1),
+		iron,
+		Enum.Material.Metal
+	)
+
+	-- Muzzle ring + glowing ember at the back
+	makeBlock(
+		model,
+		"Muzzle",
+		Vector3.new(2.2, 2, 0.5),
+		CFrame.new(cx, 4.6, cz - 3.5),
+		iron,
+		Enum.Material.Metal
+	)
+	local ember = makeSphere(
+		model,
+		"Ember",
+		0.9,
+		Vector3.new(cx, 4.6, cz + 1.6),
+		def.accent,
+		Enum.Material.Neon
+	)
+	addPointLight(ember, def.accent, 10, 2)
+
+	return barrel
+end
+
+local function buildFrost(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	local cx, cz = pos.X, pos.Z
+	local stoneIce = Color3.fromRGB(96, 125, 139)
+
+	makeCylinder(model, "Base", 6, 1.6, CFrame.new(cx, 0.8, cz), stoneIce, Enum.Material.Slate)
+	makeCylinder(
+		model,
+		"Snow",
+		6.2,
+		0.4,
+		CFrame.new(cx, 1.8, cz),
+		Color3.fromRGB(255, 255, 255),
+		Enum.Material.Snow
+	)
+
+	-- Central tall crystal
+	local center = makeBlock(
+		model,
+		"CrystalC",
+		Vector3.new(1.6, 7, 1.6),
+		CFrame.new(cx, 5.4, cz),
+		def.color,
+		Enum.Material.Glass
+	)
+	center.Transparency = 0.1
+	addPointLight(center, def.color, 14, 3)
+
+	-- Surrounding shorter crystals
+	local spots =
+		{ { 2.2, 0, 1 }, { -2.2, 0, 1 }, { 0, 2.2, 1.2 }, { 0, -2.2, 1 }, { 1.6, 1.6, 1 } }
+	for i, s in spots do
+		local h = 2.4 + s[3] * 1.4
+		local c = makeBlock(
+			model,
+			"Crystal" .. i,
+			Vector3.new(1, h, 1),
+			CFrame.new(cx + s[1], 2.2 + h / 2, cz + s[2]),
+			def.color,
+			Enum.Material.Glass
+		)
+		c.Transparency = 0.15
+	end
+
+	return center
+end
+
+local function buildStorm(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	local cx, cz = pos.X, pos.Z
+	local stone = Color3.fromRGB(69, 90, 100)
+	local metal = Color3.fromRGB(144, 164, 174)
+
+	makeCylinder(
+		model,
+		"Base",
+		6,
+		1.6,
+		CFrame.new(cx, 0.8, cz),
+		Color3.fromRGB(38, 50, 56),
+		Enum.Material.Slate
+	)
+	makeCylinder(model, "Body1", 4.5, 5, CFrame.new(cx, 4.1, cz), stone, Enum.Material.Brick)
+	makeCylinder(model, "Body2", 3.5, 3, CFrame.new(cx, 8.1, cz), stone, Enum.Material.Brick)
+
+	-- Lightning rod spikes around the top
+	for i = 0, 5 do
+		local angle = (i / 6) * math.pi * 2
+		local sx = math.cos(angle) * 2
+		local sz = math.sin(angle) * 2
+		makeBlock(
+			model,
+			"Spike" .. i,
+			Vector3.new(0.4, 2.2, 0.4),
+			CFrame.new(cx + sx, 10.6, cz + sz),
+			metal,
+			Enum.Material.Metal
+		)
+	end
+
+	-- Pulsing orb
+	local orb =
+		makeSphere(model, "Orb", 2.6, Vector3.new(cx, 11, cz), def.accent, Enum.Material.Neon)
+	addPointLight(orb, def.accent, 18, 4)
+
+	return orb
+end
+
+local function buildAlchemist(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	local cx, cz = pos.X, pos.Z
+	local wood = Color3.fromRGB(93, 64, 55)
+	local woodDark = Color3.fromRGB(62, 39, 35)
+
+	makeBlock(
+		model,
+		"Base",
+		Vector3.new(6, 1.4, 6),
+		CFrame.new(cx, 0.7, cz),
+		Color3.fromRGB(97, 97, 97),
+		Enum.Material.Slate
+	)
+
+	-- 4 wood corner pillars
+	for _, o in { { -2, -2 }, { 2, -2 }, { -2, 2 }, { 2, 2 } } do
+		makeBlock(
+			model,
+			"Pillar",
+			Vector3.new(0.7, 5.5, 0.7),
+			CFrame.new(cx + o[1], 3.9, cz + o[2]),
+			woodDark,
+			Enum.Material.Wood
+		)
+	end
+
+	-- Platform deck
+	makeBlock(
+		model,
+		"Deck",
+		Vector3.new(5, 0.5, 5),
+		CFrame.new(cx, 6.7, cz),
+		wood,
+		Enum.Material.Wood
+	)
+
+	-- Cauldron (cylinder) + glowing brew disc
+	local cauldron = makeCylinder(
+		model,
+		"Cauldron",
+		3.6,
+		2.2,
+		CFrame.new(cx, 8, cz),
+		Color3.fromRGB(33, 33, 33),
+		Enum.Material.Metal
+	)
+	local brew = makeCylinder(
+		model,
+		"Brew",
+		3.2,
+		0.3,
+		CFrame.new(cx, 9.05, cz),
+		def.accent,
+		Enum.Material.Neon
+	)
+	addPointLight(brew, def.accent, 12, 2.5)
+
+	return cauldron
+end
+
+local function buildInferno(model: Model, def: TowerDefs.TowerDef, pos: Vector3): Part
+	local cx, cz = pos.X, pos.Z
+	local stone = Color3.fromRGB(78, 52, 46)
+	local stoneDark = Color3.fromRGB(62, 39, 35)
+
+	makeCylinder(model, "Base", 6.2, 1.6, CFrame.new(cx, 0.8, cz), stoneDark, Enum.Material.Slate)
+	makeCylinder(model, "Body", 5.4, 3.8, CFrame.new(cx, 3.5, cz), stone, Enum.Material.Brick)
+	-- Scorch band
+	makeCylinder(
+		model,
+		"Band",
+		5.6,
+		0.6,
+		CFrame.new(cx, 5, cz),
+		Color3.fromRGB(33, 20, 15),
+		Enum.Material.Brick
+	)
+
+	-- Fire pit
+	makeCylinder(model, "Pit", 4.6, 0.4, CFrame.new(cx, 5.6, cz), def.accent, Enum.Material.Neon)
+
+	-- Central flame (use a ball for simplicity)
+	local flame =
+		makeSphere(model, "Flame", 2.4, Vector3.new(cx, 7, cz), def.accent, Enum.Material.Neon)
+	addPointLight(flame, def.accent, 16, 4)
+
+	return flame
+end
+
+local TOWER_BUILDERS: { [string]: (Model, TowerDefs.TowerDef, Vector3) -> Part } = {
+	basic = buildArcher,
+	sniper = buildWizard,
+	cannon = buildCannon,
+	freeze = buildFrost,
+	lightning = buildStorm,
+	poison = buildAlchemist,
+	flame = buildInferno,
+}
+
+local function buildTowerModel(
+	towerType: string,
+	def: TowerDefs.TowerDef,
+	pos: Vector3
+): (Model, Part)
 	local model = Instance.new("Model")
 	model.Name = "Tower_" .. def.name
 
-	local base = Instance.new("Part")
-	base.Name = "Base"
-	base.Size = Vector3.new(5, 1, 5)
-	base.Position = Vector3.new(pos.X, 0.5, pos.Z)
-	base.Color = Color3.fromRGB(97, 97, 97)
-	base.Material = Enum.Material.Slate
-	base.Anchored = true
-	base.CanCollide = false
-	base.TopSurface = Enum.SurfaceType.Smooth
-	base.BottomSurface = Enum.SurfaceType.Smooth
-	base.Parent = model
+	local builder = TOWER_BUILDERS[towerType] or buildArcher
+	local focus = builder(model, def, pos)
 
-	local body = Instance.new("Part")
-	body.Name = "Body"
-	body.Size = Vector3.new(3, 5, 3)
-	body.Position = Vector3.new(pos.X, 3.5, pos.Z)
-	body.Color = def.color
-	body.Material = Enum.Material.Brick
-	body.Anchored = true
-	body.CanCollide = false
-	body.TopSurface = Enum.SurfaceType.Smooth
-	body.BottomSurface = Enum.SurfaceType.Smooth
-	body.Parent = model
+	-- Use an invisible anchor as the PrimaryPart so pivot reflects world pos
+	local anchor = Instance.new("Part")
+	anchor.Name = "_Anchor"
+	anchor.Size = Vector3.new(0.1, 0.1, 0.1)
+	anchor.Position = pos
+	anchor.Transparency = 1
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CastShadow = false
+	anchor.Parent = model
+	model.PrimaryPart = anchor
 
-	local orb = Instance.new("Part")
-	orb.Name = "Orb"
-	orb.Shape = Enum.PartType.Ball
-	orb.Size = Vector3.new(2, 2, 2)
-	orb.Position = Vector3.new(pos.X, 7, pos.Z)
-	orb.Color = def.accent
-	orb.Material = Enum.Material.Neon
-	orb.Anchored = true
-	orb.CanCollide = false
-	orb.Parent = model
-
-	-- Subtle light for bloom-ish glow
-	local light = Instance.new("PointLight")
-	light.Color = def.accent
-	light.Range = 12
-	light.Brightness = 2
-	light.Parent = orb
-
-	model.PrimaryPart = base
-	return model, orb
+	return model, focus
 end
 
 -- --- Public API ---
@@ -138,7 +553,7 @@ function TowerManager.place(gx: number, gy: number, towerType: string): Tower?
 	end
 
 	local pos = Config.gridToWorld(gx, gy)
-	local model, orb = buildTowerModel(def, pos)
+	local model, focus = buildTowerModel(towerType, def, pos)
 	model.Parent = towerFolder
 
 	local tower: Tower = {
@@ -147,10 +562,10 @@ function TowerManager.place(gx: number, gy: number, towerType: string): Tower?
 		towerType = towerType,
 		def = def,
 		model = model,
-		orb = orb,
+		orb = focus,
 		x = pos.X,
 		z = pos.Z,
-		projectileY = 7, -- matches the orb height
+		projectileY = focus.Position.Y,
 		fireCooldown = 0,
 	}
 	table.insert(towers, tower)
