@@ -181,22 +181,7 @@ lobbyData = Lobby.build(function(player, realmName)
 			ctx.gameState:equipGun("starter")
 		end
 	end
-	-- Place a temporary invisible platform at the spawn point so the
-	-- character has something to stand on even if streaming hasn't
-	-- finished yet. Destroyed after a generous delay.
 	local spawnCF = ctx.arena:getArenaSpawnCFrame()
-	local safetyPlatform = Instance.new("Part")
-	safetyPlatform.Name = "SafetyPlatform"
-	safetyPlatform.Size = Vector3.new(20, 1, 20)
-	safetyPlatform.Position = spawnCF.Position - Vector3.new(0, 3, 0)
-	safetyPlatform.Anchored = true
-	safetyPlatform.Transparency = 1
-	safetyPlatform.CanCollide = true
-	safetyPlatform.CanQuery = false
-	safetyPlatform.CanTouch = false
-	safetyPlatform.CastShadow = false
-	safetyPlatform.Parent = ctx.arena.root
-	-- Stream in the arena before teleporting.
 	pcall(function()
 		player:RequestStreamAroundAsync(spawnCF.Position, 5)
 	end)
@@ -204,19 +189,9 @@ lobbyData = Lobby.build(function(player, realmName)
 	if char then
 		char:PivotTo(spawnCF)
 	end
-	-- Fire EnterRealm with the slot offset so the client can rebase its
-	-- placement ghost + overview camera to the player's arena position.
 	Remotes.EnterRealm:FireClient(player, realmName, ctx.slotOffset)
 	broadcastToPlayer(ctx)
-	-- Dismiss the loading screen now that the player is positioned.
 	Remotes.LoadingScreen:FireClient(player, false)
-	-- Clean up the safety platform after streaming has had time to fully
-	-- populate the real ground.
-	task.delay(8, function()
-		if safetyPlatform and safetyPlatform.Parent then
-			safetyPlatform:Destroy()
-		end
-	end)
 end, ALL_UNLOCKED)
 spawn.CFrame = lobbyData.spawnCFrame
 
@@ -466,28 +441,10 @@ local function hookCharacterRespawn(ctx: PlayerContext)
 		local targetCF = if ctx.inArena
 			then ctx.arena:getArenaSpawnCFrame()
 			else lobbyData.spawnCFrame
-		-- Safety platform so the character has collision under their
-		-- feet immediately, even before streaming finishes.
-		local safetyPlatform = Instance.new("Part")
-		safetyPlatform.Name = "RespawnPlatform"
-		safetyPlatform.Size = Vector3.new(20, 1, 20)
-		safetyPlatform.Position = targetCF.Position - Vector3.new(0, 3, 0)
-		safetyPlatform.Anchored = true
-		safetyPlatform.Transparency = 1
-		safetyPlatform.CanCollide = true
-		safetyPlatform.CanQuery = false
-		safetyPlatform.CanTouch = false
-		safetyPlatform.CastShadow = false
-		safetyPlatform.Parent = if ctx.inArena then ctx.arena.root else workspace
 		pcall(function()
 			ctx.player:RequestStreamAroundAsync(targetCF.Position, 5)
 		end)
 		char:PivotTo(targetCF)
-		task.delay(8, function()
-			if safetyPlatform and safetyPlatform.Parent then
-				safetyPlatform:Destroy()
-			end
-		end)
 	end)
 end
 
@@ -984,18 +941,6 @@ Remotes.Restart.OnServerEvent:Connect(function(player)
 	Remotes.LoadingScreen:FireClient(player, true, realmDef.displayName)
 	ctx.arena:resetCurrentRealm()
 	local spawnCF = ctx.arena:getArenaSpawnCFrame()
-	-- Safety platform while streaming catches up.
-	local safetyPlatform = Instance.new("Part")
-	safetyPlatform.Name = "SafetyPlatform"
-	safetyPlatform.Size = Vector3.new(20, 1, 20)
-	safetyPlatform.Position = spawnCF.Position - Vector3.new(0, 3, 0)
-	safetyPlatform.Anchored = true
-	safetyPlatform.Transparency = 1
-	safetyPlatform.CanCollide = true
-	safetyPlatform.CanQuery = false
-	safetyPlatform.CanTouch = false
-	safetyPlatform.CastShadow = false
-	safetyPlatform.Parent = ctx.arena.root
 	pcall(function()
 		player:RequestStreamAroundAsync(spawnCF.Position, 5)
 	end)
@@ -1005,11 +950,6 @@ Remotes.Restart.OnServerEvent:Connect(function(player)
 	end
 	broadcastToPlayer(ctx)
 	Remotes.LoadingScreen:FireClient(player, false)
-	task.delay(8, function()
-		if safetyPlatform and safetyPlatform.Parent then
-			safetyPlatform:Destroy()
-		end
-	end)
 end)
 
 Remotes.ReturnToLobby.OnServerEvent:Connect(function(player)
