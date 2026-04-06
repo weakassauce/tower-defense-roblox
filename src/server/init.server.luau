@@ -1002,22 +1002,23 @@ RunService.Heartbeat:Connect(function(dt)
 		for _, enemy in enemyMgr:getAll() do
 			if enemy.reachedEnd and not enemy.damaged then
 				enemy.damaged = true
-				-- Wave 1 is the tutorial wave — enemies deal no castle
-				-- damage so new players can learn without losing.
-				local dmg = if state.waveNum <= 1 then 0 else enemy.castleDamage
-				local died = ctx.gameState:damage(dmg)
-				stateChanged = true
-				Castle.updateHp(castleCtx, ctx.gameState:get().hp, Config.STARTING_HP)
-				Castle.flashDamage(castleCtx)
-				if died then
-					Castle.explode(castleCtx)
-					Remotes.CastleDestroyed:FireClient(ctx.player, castleCtx.center)
-					local owner = ctx
-					task.delay(4, function()
-						if owner.gameState:get().gameOver then
-							Remotes.GameOver:FireClient(owner.player)
-						end
-					end)
+				-- Wave 1 is the tutorial wave — enemies pass through
+				-- harmlessly. No damage, no flash, no game over possible.
+				if state.waveNum > 1 then
+					local died = ctx.gameState:damage(enemy.castleDamage)
+					stateChanged = true
+					Castle.updateHp(castleCtx, ctx.gameState:get().hp, Config.STARTING_HP)
+					Castle.flashDamage(castleCtx)
+					if died then
+						Castle.explode(castleCtx)
+						Remotes.CastleDestroyed:FireClient(ctx.player, castleCtx.center)
+						local owner = ctx
+						task.delay(4, function()
+							if owner.gameState:get().gameOver then
+								Remotes.GameOver:FireClient(owner.player)
+							end
+						end)
+					end
 				end
 			elseif not enemy.alive and not enemy.reachedEnd and not enemy.rewarded then
 				enemy.rewarded = true
