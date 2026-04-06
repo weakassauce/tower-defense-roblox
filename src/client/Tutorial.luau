@@ -89,7 +89,7 @@ local function buildSteps(): { Step }
 		{ kind = "click", icon = "🎯", text = "Shoot an enemy!", conditionName = "gunFired" },
 
 		-- SHOP
-		{ kind = "click", icon = "🛒", text = "Open the armory!", target = "ShopBtn", conditionName = "shopOpened" },
+		{ kind = "click", icon = "🛒", text = "Open the shop!", target = "ShopBtn", conditionName = "shopOpened" },
 		{ kind = "manual", icon = "💰", text = "Buy better guns with gold." },
 
 		-- INVENTORY
@@ -138,7 +138,7 @@ local stepGeneration = 0
 -- advancing. Manual steps are just welcome / goodbye flavor text with
 -- no in-world task to complete, so we run them on a timer instead of
 -- making the player click NEXT.
-local MANUAL_STEP_AUTO_ADVANCE_SECONDS = 4.5
+-- Manual steps require NEXT tap — no auto-advance timer.
 
 -- --- Helpers ---
 
@@ -564,7 +564,7 @@ local function showStep(index: number)
 	-- New step, new generation: any pending manual-step auto-advance
 	-- task from the previous step is now stale and will be ignored.
 	stepGeneration += 1
-	local thisGeneration = stepGeneration
+	local _thisGeneration = stepGeneration
 
 	if tooltipText then
 		tooltipText.Text = step.text
@@ -625,17 +625,8 @@ local function showStep(index: number)
 		updateGroundTrail()
 	elseif step.kind == "click" and step.target then
 		updateScreenPointer(step.target)
-	elseif step.kind == "manual" then
-		-- Flavor-text step with no task to complete — auto-advance on
-		-- a timer. The generation check makes this a safe no-op if the
-		-- player skipped the tutorial or moved on before the delay.
-		task.delay(MANUAL_STEP_AUTO_ADVANCE_SECONDS, function()
-			if stepGeneration ~= thisGeneration then
-				return
-			end
-			Tutorial._advance()
-		end)
 	end
+	-- Manual steps just show text + NEXT button — no auto-advance.
 end
 
 function Tutorial._advance()
