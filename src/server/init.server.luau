@@ -140,21 +140,13 @@ end
 local lobbyData: Lobby.LobbyData
 local ensurePlayerContext: (player: Player) -> PlayerContext?
 
--- Returns the union of every connected player's highestWaves, so a
--- portal only stays locked if NO player in the server has met its
--- requirement. This keeps the shared lobby's portal lock state sane
--- in multi-player: you don't want it to flicker whenever a different
--- player walks past with a lower progression.
-local function aggregatedHighestWaves(): { [string]: number }
-	local agg: { [string]: number } = {}
-	for _, ctx in contexts do
-		for realmName, wave in ctx.gameState:getHighestWaves() do
-			if (agg[realmName] or 0) < wave then
-				agg[realmName] = wave
-			end
-		end
-	end
-	return agg
+-- All portals are built visually unlocked so one player's progression
+-- doesn't leak to other players in the shared lobby. The server-side
+-- per-player gate in the portal callback is the real lock. This table
+-- is passed to Lobby.build so every portal renders in the "open" state.
+local ALL_UNLOCKED: { [string]: number } = {}
+for _, name in RealmDefs.ORDER do
+	ALL_UNLOCKED[name] = 9999
 end
 
 lobbyData = Lobby.build(function(player, realmName)
@@ -193,7 +185,7 @@ lobbyData = Lobby.build(function(player, realmName)
 	-- placement ghost + overview camera to the player's arena position.
 	Remotes.EnterRealm:FireClient(player, realmName, ctx.slotOffset)
 	broadcastToPlayer(ctx)
-end, aggregatedHighestWaves())
+end, ALL_UNLOCKED)
 spawn.CFrame = lobbyData.spawnCFrame
 
 print(string.format(
@@ -365,10 +357,6 @@ local function onPlayerAdded(player: Player)
 		ownsPremiumTower(ctx)
 	end)
 
-	-- Refresh lobby portal locks using the new aggregated view so the
-	-- joining player immediately sees their own unlocks reflected.
-	Lobby.refreshUnlocks(lobbyData, aggregatedHighestWaves())
-
 	-- Initial state push. Wait a moment for the client to subscribe.
 	task.wait(0.5)
 	broadcastToPlayer(ctx)
@@ -388,9 +376,6 @@ local function onPlayerRemoving(player: Player)
 	PlayerSlot.release(player)
 	contexts[player] = nil
 
-	-- The aggregated lock table may have shrunk now that this player
-	-- is gone; refresh so the lobby reflects the remaining players.
-	Lobby.refreshUnlocks(lobbyData, aggregatedHighestWaves())
 end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
@@ -450,7 +435,6 @@ Remotes.UnlockAdmin.OnServerEvent:Connect(function(player, code)
 	end
 	ctx.gameState:setAdmin(keys)
 	ctx.gameState:unlockAllRealms(RealmDefs.ORDER)
-	Lobby.refreshUnlocks(lobbyData, aggregatedHighestWaves())
 	ctx.premiumOwned = true
 	Remotes.PremiumTowerUnlocked:FireClient(player)
 	broadcastToPlayer(ctx)
@@ -924,9 +908,7 @@ RunService.Heartbeat:Connect(function(dt)
 			stateChanged = true
 			Remotes.WaveComplete:FireClient(ctx.player, bonus)
 			local s = ctx.gameState:get()
-			if ctx.gameState:updateHighestWave(s.realm, s.waveNum) then
-				Lobby.refreshUnlocks(lobbyData, aggregatedHighestWaves())
-			end
+			ctx.gameState:updateHighestWave(s.realm, s.waveNum)
 		end
 
 		enemyMgr:cleanup()
