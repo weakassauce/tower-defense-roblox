@@ -295,6 +295,24 @@ Hud.setHoverTransitionCallback(function(_isHovering)
 	refreshGunVisibility()
 end)
 
+-- E key toggles the gun: if a gun is equipped, holster it (unequip);
+-- if no gun is equipped, re-equip the last owned gun. Tracks the
+-- last equipped key so pressing E again pulls it back out.
+local lastEquippedKey: string? = "starter"
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then
+		return
+	end
+	if input.KeyCode == Enum.KeyCode.E then
+		if equippedGunKey then
+			lastEquippedKey = equippedGunKey
+			Remotes.EquipGun:FireServer(nil)
+		elseif lastEquippedKey then
+			Remotes.EquipGun:FireServer(lastEquippedKey)
+		end
+	end
+end)
+
 -- Server → client state sync. Also watches for a gameOver → not gameOver
 -- transition so the cinematic camera is released on restart, and for
 -- equipped-gun changes so the visual model swaps in sync with the HUD.
