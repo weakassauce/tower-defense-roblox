@@ -683,11 +683,9 @@ function Castle.build(
 	billboard.Name = "CastleHpBar"
 	billboard.Size = UDim2.fromOffset(280, 60)
 	billboard.StudsOffset = Vector3.new(0, 18, 0)
-	billboard.AlwaysOnTop = true
+	billboard.AlwaysOnTop = false
 	billboard.LightInfluence = 0
-	-- Hide from the distant lobby so you don't see a floating HP bar
-	-- across the skybox.
-	billboard.MaxDistance = 220
+	billboard.MaxDistance = 250
 	billboard.Parent = keep
 
 	local title = Instance.new("TextLabel")

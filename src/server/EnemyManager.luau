@@ -969,9 +969,8 @@ local function buildHpBar(
 	billboard.Name = "HpBar"
 	billboard.Size = UDim2.fromOffset(130, 36)
 	billboard.StudsOffset = Vector3.new(0, barY + 2.5, 0)
-	billboard.AlwaysOnTop = true
+	billboard.AlwaysOnTop = false
 	billboard.LightInfluence = 0
-	-- Hide HP bars from far away (lobby is 3000+ studs from the arena)
 	billboard.MaxDistance = 200
 	billboard.Parent = parent
 

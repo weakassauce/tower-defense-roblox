@@ -249,8 +249,9 @@ local function refreshPlayerPortalOverlays(ctx: PlayerContext)
 				overlay.Name = "Lock_" .. realmName
 				overlay.Size = UDim2.fromOffset(280, 110)
 				overlay.StudsOffset = Vector3.new(0, 0, 0)
-				overlay.AlwaysOnTop = true
+				overlay.AlwaysOnTop = false
 				overlay.LightInfluence = 0
+				overlay.MaxDistance = 300
 				overlay.Adornee = refs.shimmer
 				overlay.Parent = container
 

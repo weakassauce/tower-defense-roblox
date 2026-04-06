@@ -286,8 +286,9 @@ local function applyPortalState(refs: PortalRefs, unlocked: boolean, requirement
 			-- sizing when SizeOffset is unset.
 			overlay.Size = UDim2.fromOffset(280, 110)
 			overlay.StudsOffset = Vector3.new(0, 0, 0)
-			overlay.AlwaysOnTop = true
+			overlay.AlwaysOnTop = false
 			overlay.LightInfluence = 0
+			overlay.MaxDistance = 300
 			overlay.Adornee = refs.shimmer
 			overlay.Parent = refs.shimmer
 
@@ -410,8 +411,9 @@ local function buildPremiumPedestal(parent: Instance, center: Vector3)
 	billboard.Name = "PedestalLabel"
 	billboard.Size = UDim2.fromOffset(320, 90)
 	billboard.StudsOffset = Vector3.new(0, 1.5, 0)
-	billboard.AlwaysOnTop = true
+	billboard.AlwaysOnTop = false
 	billboard.LightInfluence = 0
+	billboard.MaxDistance = 300
 	billboard.Adornee = labelAnchor
 	billboard.Parent = labelAnchor
 
@@ -627,8 +629,9 @@ local function buildGunPedestalFromSpec(parent: Instance, center: Vector3, spec:
 	billboard.Name = "PedestalLabel"
 	billboard.Size = UDim2.fromOffset(320, 90)
 	billboard.StudsOffset = Vector3.new(0, 1.5, 0)
-	billboard.AlwaysOnTop = true
+	billboard.AlwaysOnTop = false
 	billboard.LightInfluence = 0
+	billboard.MaxDistance = 300
 	billboard.Adornee = labelAnchor
 	billboard.Parent = labelAnchor
 
@@ -1036,8 +1039,9 @@ local function buildPremiumGunPedestal(parent: Instance, center: Vector3)
 	billboard.Name = "PedestalLabel"
 	billboard.Size = UDim2.fromOffset(320, 90)
 	billboard.StudsOffset = Vector3.new(0, 1.5, 0)
-	billboard.AlwaysOnTop = true
+	billboard.AlwaysOnTop = false
 	billboard.LightInfluence = 0
+	billboard.MaxDistance = 300
 	billboard.Adornee = labelAnchor
 	billboard.Parent = labelAnchor
 
