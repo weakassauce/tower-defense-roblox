@@ -70,26 +70,25 @@ local function buildSteps(): { Step }
 	local isMobile = deviceKind == "mobile"
 	local isConsole = deviceKind == "console"
 
-	local e = if isMobile then "gun button" elseif isConsole then "Y" else "E"
-	local c = if isMobile then "pinch + drag" elseif isConsole then "right stick" else "C"
+	-- Device-aware labels with mobile button alternatives
+	local gunLabel = if isMobile then "Tap the gun button" elseif isConsole then "Press Y" else "Press E or tap gun button"
+	local viewLabel = if isMobile then "Pinch + drag to look" elseif isConsole then "Right stick" else "Press C or tap camera button"
 
 	return {
-		-- Player does each action, next step appears automatically.
-		-- "read" steps use a short timed delay since there's no action.
 		{ kind = "walkTo", icon = "🏰", text = "Enter the portal!", conditionName = "enteredArena" },
 		{ kind = "manual", icon = "🟩", text = "Green = build. Brown = enemy path.", conditionName = "_read" },
 		{ kind = "click", icon = "🏹", text = "Pick a tower!", target = "TowerPanel", conditionName = "towerSelected" },
 		{ kind = "click", icon = "💥", text = "Place it near the path!", conditionName = "towerPlaced" },
 		{ kind = "click", icon = "⚔️", text = "Start the wave!", target = "WaveBtn", conditionName = "waveStarted" },
 		{ kind = "manual", icon = "❤️", text = "Protect your castle!", conditionName = "_read" },
-		{ kind = "manual", icon = "🔫", text = e .. " = draw gun", conditionName = "_read" },
+		{ kind = "manual", icon = "🔫", text = gunLabel .. " = draw gun", conditionName = "_read" },
 		{ kind = "click", icon = "🎯", text = "Shoot an enemy!", conditionName = "gunFired" },
 		{ kind = "click", icon = "🛒", text = "Open the shop!", target = "ShopBtn", conditionName = "shopOpened" },
 		{ kind = "manual", icon = "💰", text = "Buy guns with gold.", conditionName = "_read" },
 		{ kind = "manual", icon = "✋", text = "PICKUP = grab a tower", conditionName = "_read" },
 		{ kind = "click", icon = "🎒", text = "Open inventory!", target = "InventoryBtn", conditionName = "inventoryOpened" },
-		{ kind = "manual", icon = "📦", text = "Re-place or sell towers.", conditionName = "_read" },
-		{ kind = "manual", icon = "🎮", text = c .. " = change view", conditionName = "_read" },
+		{ kind = "click", icon = "📦", text = "Place or sell an item!", conditionName = "inventoryItemUsed" },
+		{ kind = "manual", icon = "🎮", text = viewLabel .. " = change view", conditionName = "_read" },
 		{ kind = "manual", icon = "💎", text = "Diamond = Robux shop", conditionName = "_read" },
 		{ kind = "manual", icon = "🏠", text = "Blue = back to lobby", conditionName = "_read" },
 		{ kind = "manual", icon = "💾", text = "Progress saves automatically!", conditionName = "_read" },
