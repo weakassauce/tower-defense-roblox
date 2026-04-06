@@ -85,7 +85,7 @@ local function buildSteps(): { Step }
 		{ kind = "click", icon = "🎯", text = "Shoot an enemy!", conditionName = "gunFired" },
 		{ kind = "click", icon = "🛒", text = "Open the shop!", target = "ShopBtn", conditionName = "shopOpened" },
 		{ kind = "manual", icon = "💰", text = "Buy guns with gold.", conditionName = "_read" },
-		{ kind = "manual", icon = "✋", text = "PICKUP = grab a tower", conditionName = "_read" },
+		{ kind = "click", icon = "✋", text = "Pick up a placed tower!", target = "PickupBtn", conditionName = "towerPickedUp" },
 		{ kind = "click", icon = "🎒", text = "Open inventory!", target = "InventoryBtn", conditionName = "inventoryOpened" },
 		{ kind = "click", icon = "📦", text = "Place or sell an item!", conditionName = "inventoryItemUsed" },
 		{ kind = "manual", icon = "🎮", text = viewLabel .. " = change view", conditionName = "_read" },
