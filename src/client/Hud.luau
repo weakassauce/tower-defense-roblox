@@ -15,6 +15,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local TowerDefs = require(ReplicatedStorage.Shared.TowerDefs)
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -481,13 +482,15 @@ end
 
 local function buildWaveButton(parent: Instance)
 	waveBtn = makeTextButton(parent, "WaveBtn", "START WAVE 1")
-	waveBtn.Size = UDim2.fromOffset(260, 54)
-	waveBtn.Position = UDim2.new(0.5, -130, 1, -300)
-	waveBtn.BackgroundColor3 = Color3.fromRGB(76, 175, 80)
-	waveBtn.BackgroundTransparency = 0.2
-	waveBtn.TextSize = 20
-	addCorner(waveBtn, 10)
-	addStroke(waveBtn, Color3.fromRGB(165, 214, 167), 2)
+	waveBtn.Size = UDim2.fromOffset(280, 60)
+	waveBtn.Position = UDim2.new(0.5, -140, 1, -305)
+	waveBtn.BackgroundColor3 = Color3.fromRGB(40, 190, 70)
+	waveBtn.BackgroundTransparency = 0
+	waveBtn.TextSize = 22
+	waveBtn.Font = Enum.Font.GothamBlack
+	addCorner(waveBtn, 12)
+	addStroke(waveBtn, Color3.fromRGB(100, 255, 130), 3)
+	addGradient(waveBtn, Color3.fromRGB(50, 210, 80), Color3.fromRGB(30, 150, 55))
 
 	waveBtn.Activated:Connect(function()
 		Remotes.StartWave:FireServer()
@@ -1494,39 +1497,46 @@ local function buildHomeScreen(parent: Instance)
 	local subtitle = makeTextLabel(
 		card,
 		"Subtitle",
-		"Build towers of steel and sorcery. Defend the path. Survive the siege.",
-		16
+		"Towers. Guns. Five realms to conquer.",
+		18
 	)
-	subtitle.Font = Enum.Font.GothamMedium
-	subtitle.TextColor3 = COLOR_TEXT_DIM
-	subtitle.Size = UDim2.new(1, -40, 0, 24)
+	subtitle.Font = Enum.Font.GothamBold
+	subtitle.TextColor3 = Color3.fromRGB(220, 200, 170)
+	subtitle.Size = UDim2.new(1, -40, 0, 28)
 	subtitle.Position = UDim2.fromOffset(20, 170)
 	subtitle.TextXAlignment = Enum.TextXAlignment.Center
 	subtitle.ZIndex = 102
 
 	local playBtn = makeTextButton(card, "PlayBtn", "PLAY")
-	playBtn.Size = UDim2.fromOffset(240, 72)
-	playBtn.Position = UDim2.new(0.5, -120, 0, 240)
-	playBtn.TextSize = 32
-	playBtn.BackgroundColor3 = Color3.fromRGB(109, 58, 16)
+	playBtn.Size = UDim2.fromOffset(280, 80)
+	playBtn.Position = UDim2.new(0.5, -140, 0, 235)
+	playBtn.TextSize = 38
+	playBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 60)
 	playBtn.ZIndex = 102
-	addCorner(playBtn, 10)
-	addStroke(playBtn, COLOR_ACCENT_BRIGHT, 3)
-	addGradient(playBtn, Color3.fromRGB(160, 90, 30), Color3.fromRGB(80, 40, 10))
-
-	local hint = makeTextLabel(
-		card,
-		"Hint",
-		"<b>L-click</b> Place tower  ·  <b>R-click</b> Pick up  ·  <b>C</b> Switch view",
-		14
-	)
-	hint.Font = Enum.Font.GothamMedium
-	hint.RichText = true
-	hint.Size = UDim2.new(1, -40, 0, 24)
-	hint.Position = UDim2.fromOffset(20, 370)
-	hint.TextColor3 = COLOR_TEXT_DIM
-	hint.TextXAlignment = Enum.TextXAlignment.Center
-	hint.ZIndex = 102
+	addCorner(playBtn, 14)
+	addStroke(playBtn, Color3.fromRGB(120, 255, 140), 3)
+	addGradient(playBtn, Color3.fromRGB(50, 200, 80), Color3.fromRGB(30, 130, 50))
+	-- Pulsing glow on the PLAY button so it's impossible to miss.
+	local playGlow = Instance.new("UIStroke")
+	playGlow.Name = "Glow"
+	playGlow.Color = Color3.fromRGB(120, 255, 140)
+	playGlow.Thickness = 4
+	playGlow.Transparency = 0.5
+	playGlow.Parent = playBtn
+	task.spawn(function()
+		while playBtn and playBtn.Parent do
+			TweenService:Create(playGlow, TweenInfo.new(0.8, Enum.EasingStyle.Sine), {
+				Transparency = 0,
+				Thickness = 6,
+			}):Play()
+			task.wait(0.8)
+			TweenService:Create(playGlow, TweenInfo.new(0.8, Enum.EasingStyle.Sine), {
+				Transparency = 0.6,
+				Thickness = 3,
+			}):Play()
+			task.wait(0.8)
+		end
+	end)
 
 	playBtn.Activated:Connect(function()
 		homeScreen.Visible = false

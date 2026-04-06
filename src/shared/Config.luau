@@ -93,7 +93,7 @@ end
 -- afford 1 archer tower up front and have to earn the rest from wave
 -- kills, forcing early skill without blocking progress.
 Config.STARTING_HP = 25
-Config.STARTING_GOLD = 120
+Config.STARTING_GOLD = 250
 Config.SELL_RATIO = 0.7
 
 return Config

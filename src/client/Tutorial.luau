@@ -50,81 +50,46 @@ type Step = {
 local function buildSteps(): { Step }
 	return {
 		{
-			kind = "manual",
-			icon = "👋",
-			text = "Welcome! Let me show you around.",
-		},
-		{
 			kind = "walkTo",
 			icon = "🏰",
-			text = "Walk into the REALM DEFENSE portal. Follow the arrows!",
+			text = "Step into the REALM DEFENSE portal to begin!",
 			conditionName = "enteredArena",
 		},
 		{
 			kind = "click",
 			icon = "🏹",
-			text = "Click a tower in the bottom panel.",
+			text = "Pick a tower from the bottom panel!",
 			target = "TowerPanel",
 			conditionName = "towerSelected",
 		},
 		{
 			kind = "click",
-			icon = "🗺️",
-			text = "Now click a grass tile to place it.",
+			icon = "💥",
+			text = "Tap a grass tile to build it!",
 			conditionName = "towerPlaced",
 		},
 		{
 			kind = "click",
 			icon = "⚔️",
-			text = "Press the green button to start the first wave.",
+			text = "Hit the green button — here they come!",
 			target = "WaveBtn",
 			conditionName = "waveStarted",
 		},
-		-- Gun step comes IMMEDIATELY after the wave starts (no manual
-		-- "defend the castle" intermission) so the player still has
-		-- active enemies on the field to shoot at while the tutorial
-		-- is teaching the gun. Auto-advances on the first trigger pull.
 		{
 			kind = "manual",
 			icon = "🔫",
-			text = "Press E to draw or holster your gun.",
+			text = "Press E to draw your gun and fight alongside your towers!",
 		},
 		{
 			kind = "click",
 			icon = "🎯",
-			text = "Wave incoming! Press E, then tap enemies with your pistol to help your towers.",
+			text = "Shoot the enemies! Press E then click to fire!",
 			conditionName = "gunFired",
 		},
 		{
-			kind = "click",
-			icon = "🛒",
-			text = "Open the armory to buy stronger guns with your gold.",
-			target = "ShopBtn",
-			conditionName = "shopOpened",
-		},
-		{
-			kind = "click",
-			icon = "🎒",
-			text = "Use the PICKUP button, then tap a placed tower to store it.",
-			conditionName = "towerPickedUp",
-		},
-		{
-			kind = "click",
-			icon = "📦",
-			text = "Tap the backpack button to open your inventory.",
-			target = "InventoryBtn",
-			conditionName = "inventoryOpened",
-		},
-		{
-			kind = "click",
-			icon = "💰",
-			text = "Sell items for gold, or re-place them on any grass tile.",
-			conditionName = "inventoryItemUsed",
-		},
-		{
 			kind = "manual",
-			icon = "✨",
-			text = "You're ready! Unlock more realms by reaching high waves.",
+			icon = "🌟",
+			text = "Nice! Survive more waves to unlock new realms with unique towers!",
 		},
 	}
 end
@@ -160,7 +125,7 @@ local stepGeneration = 0
 -- advancing. Manual steps are just welcome / goodbye flavor text with
 -- no in-world task to complete, so we run them on a timer instead of
 -- making the player click NEXT.
-local MANUAL_STEP_AUTO_ADVANCE_SECONDS = 3.5
+local MANUAL_STEP_AUTO_ADVANCE_SECONDS = 2.5
 
 -- --- Helpers ---
 

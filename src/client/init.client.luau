@@ -340,7 +340,44 @@ end)
 
 -- Wave completion notification. If the player has the AUTO WAVE toggle on,
 -- fire StartWave after a short grace period.
-Remotes.WaveComplete.OnClientEvent:Connect(function(_bonus)
+-- Wave complete celebration banner — brief "WAVE COMPLETE" with gold
+-- earned flashes in the center of the screen for a dopamine hit.
+local waveCompleteBanner: TextLabel? = nil
+
+Remotes.WaveComplete.OnClientEvent:Connect(function(bonus)
+	-- Show celebration
+	if not waveCompleteBanner then
+		local lbl = Instance.new("TextLabel")
+		lbl.Name = "WaveCompleteBanner"
+		lbl.Size = UDim2.new(0.6, 0, 0, 60)
+		lbl.AnchorPoint = Vector2.new(0.5, 0.5)
+		lbl.Position = UDim2.fromScale(0.5, 0.35)
+		lbl.BackgroundTransparency = 1
+		lbl.Font = Enum.Font.GothamBlack
+		lbl.TextSize = 36
+		lbl.TextColor3 = Color3.fromRGB(255, 220, 80)
+		lbl.TextStrokeColor3 = Color3.fromRGB(40, 20, 0)
+		lbl.TextStrokeTransparency = 0
+		lbl.ZIndex = 50
+		lbl.Parent = playerGui:FindFirstChild("TowerDefenseHud")
+		waveCompleteBanner = lbl
+	end
+	local bonusText = if typeof(bonus) == "number" and bonus > 0
+		then string.format("  +%d gold", bonus)
+		else ""
+	waveCompleteBanner.Text = "WAVE COMPLETE!" .. bonusText
+	waveCompleteBanner.TextTransparency = 0
+	waveCompleteBanner.TextStrokeTransparency = 0
+	waveCompleteBanner.Visible = true
+	task.delay(1.8, function()
+		if waveCompleteBanner then
+			TweenService:Create(waveCompleteBanner, TweenInfo.new(0.5), {
+				TextTransparency = 1,
+				TextStrokeTransparency = 1,
+			}):Play()
+		end
+	end)
+
 	if not Hud.isAutoWaveEnabled() then
 		return
 	end
