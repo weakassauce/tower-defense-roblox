@@ -74,36 +74,26 @@ local function buildSteps(): { Step }
 	local c = if isMobile then "pinch + drag" elseif isConsole then "right stick" else "C"
 
 	return {
-		-- LOBBY
+		-- Player does each action, next step appears automatically.
+		-- "read" steps use a short timed delay since there's no action.
 		{ kind = "walkTo", icon = "🏰", text = "Enter the portal!", conditionName = "enteredArena" },
-
-		-- BUILD
-		{ kind = "manual", icon = "🟩", text = "Green = build here. Brown = enemy path." },
+		{ kind = "manual", icon = "🟩", text = "Green = build. Brown = enemy path.", conditionName = "_read" },
 		{ kind = "click", icon = "🏹", text = "Pick a tower!", target = "TowerPanel", conditionName = "towerSelected" },
 		{ kind = "click", icon = "💥", text = "Place it near the path!", conditionName = "towerPlaced" },
-
-		-- FIGHT
 		{ kind = "click", icon = "⚔️", text = "Start the wave!", target = "WaveBtn", conditionName = "waveStarted" },
-		{ kind = "manual", icon = "❤️", text = "Don't let enemies reach your castle!" },
-		{ kind = "manual", icon = "🔫", text = e .. " = draw / holster your gun" },
+		{ kind = "manual", icon = "❤️", text = "Protect your castle!", conditionName = "_read" },
+		{ kind = "manual", icon = "🔫", text = e .. " = draw gun", conditionName = "_read" },
 		{ kind = "click", icon = "🎯", text = "Shoot an enemy!", conditionName = "gunFired" },
-
-		-- SHOP
 		{ kind = "click", icon = "🛒", text = "Open the shop!", target = "ShopBtn", conditionName = "shopOpened" },
-		{ kind = "manual", icon = "💰", text = "Buy better guns with gold." },
-
-		-- INVENTORY
-		{ kind = "manual", icon = "✋", text = "PICKUP button = grab a placed tower" },
+		{ kind = "manual", icon = "💰", text = "Buy guns with gold.", conditionName = "_read" },
+		{ kind = "manual", icon = "✋", text = "PICKUP = grab a tower", conditionName = "_read" },
 		{ kind = "click", icon = "🎒", text = "Open inventory!", target = "InventoryBtn", conditionName = "inventoryOpened" },
-		{ kind = "manual", icon = "📦", text = "Re-place or sell stored towers." },
-
-		-- TIPS
-		{ kind = "manual", icon = "🎮", text = c .. " = change camera view" },
-		{ kind = "manual", icon = "🔁", text = "AUTO WAVE = skip the wait" },
-		{ kind = "manual", icon = "💎", text = "Diamond button = Robux shop" },
-		{ kind = "manual", icon = "🏠", text = "Blue button = back to lobby" },
-		{ kind = "manual", icon = "💾", text = "Progress saves automatically!" },
-		{ kind = "manual", icon = "🌟", text = "Unlock 5 realms. Good luck!" },
+		{ kind = "manual", icon = "📦", text = "Re-place or sell towers.", conditionName = "_read" },
+		{ kind = "manual", icon = "🎮", text = c .. " = change view", conditionName = "_read" },
+		{ kind = "manual", icon = "💎", text = "Diamond = Robux shop", conditionName = "_read" },
+		{ kind = "manual", icon = "🏠", text = "Blue = back to lobby", conditionName = "_read" },
+		{ kind = "manual", icon = "💾", text = "Progress saves automatically!", conditionName = "_read" },
+		{ kind = "manual", icon = "🌟", text = "Beat wave 12 to unlock Frost Kingdom!", conditionName = "_read" },
 	}
 end
 
@@ -134,11 +124,11 @@ local onCompleteCallback: (() -> ())? = nil
 -- into a destroyed tutorial.
 local stepGeneration = 0
 
--- Seconds a "manual" (text-only) step stays on screen before auto-
--- advancing. Manual steps are just welcome / goodbye flavor text with
--- no in-world task to complete, so we run them on a timer instead of
--- making the player click NEXT.
--- Manual steps require NEXT tap — no auto-advance timer.
+-- "_read" condition: info-only steps with no player action. A timer
+-- flag flips to true after READ_DELAY seconds so the heartbeat's
+-- condition check auto-advances. Reset by showStep on each new step.
+local READ_DELAY = 3.5
+local readTimerDone = false
 
 -- --- Helpers ---
 
@@ -548,6 +538,8 @@ local function checkCondition(name: string): boolean
 		-- Inventory shrank since the step started → the player either
 		-- sold or re-placed an item from their backpack.
 		return getInventoryCount() < stepStartInventoryCount
+	elseif name == "_read" then
+		return readTimerDone
 	end
 	return false
 end
@@ -561,10 +553,9 @@ local function showStep(index: number)
 		return
 	end
 
-	-- New step, new generation: any pending manual-step auto-advance
-	-- task from the previous step is now stale and will be ignored.
 	stepGeneration += 1
-	local _thisGeneration = stepGeneration
+	local thisGeneration = stepGeneration
+	readTimerDone = false
 
 	if tooltipText then
 		tooltipText.Text = step.text
@@ -583,9 +574,10 @@ local function showStep(index: number)
 	-- The button is purely a fallback so a player never gets stuck if
 	-- a condition check misses, or who wants to skip through flavor
 	-- text faster than the timer.
+	-- No NEXT button — steps auto-advance on player action or read timer.
+	-- The NEXT button is kept hidden; only SKIP remains as an escape hatch.
 	if nextBtn then
-		nextBtn.Visible = true
-		nextBtn.Text = (index == #steps) and "FINISH" or "NEXT  →"
+		nextBtn.Visible = false
 	end
 
 	-- Snapshot state for auto-advance conditions
@@ -626,7 +618,16 @@ local function showStep(index: number)
 	elseif step.kind == "click" and step.target then
 		updateScreenPointer(step.target)
 	end
-	-- Manual steps just show text + NEXT button — no auto-advance.
+
+	-- For info-only steps ("_read"), start a timer that flips the
+	-- readTimerDone flag so the heartbeat condition check picks it up.
+	if step.conditionName == "_read" then
+		task.delay(READ_DELAY, function()
+			if stepGeneration == thisGeneration then
+				readTimerDone = true
+			end
+		end)
+	end
 end
 
 function Tutorial._advance()

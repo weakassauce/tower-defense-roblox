@@ -1002,7 +1002,10 @@ RunService.Heartbeat:Connect(function(dt)
 		for _, enemy in enemyMgr:getAll() do
 			if enemy.reachedEnd and not enemy.damaged then
 				enemy.damaged = true
-				local died = ctx.gameState:damage(enemy.castleDamage)
+				-- Wave 1 is the tutorial wave — enemies deal no castle
+				-- damage so new players can learn without losing.
+				local dmg = if state.waveNum <= 1 then 0 else enemy.castleDamage
+				local died = ctx.gameState:damage(dmg)
 				stateChanged = true
 				Castle.updateHp(castleCtx, ctx.gameState:get().hp, Config.STARTING_HP)
 				Castle.flashDamage(castleCtx)
