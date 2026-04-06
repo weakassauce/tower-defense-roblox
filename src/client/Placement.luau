@@ -304,19 +304,17 @@ function Placement.enterLobbyMode()
 	cameraLocked = true
 end
 
--- Drops the player into third-person character view when they touch a
--- realm portal. Previously we slammed the camera into the top-down
--- overview immediately, which was disorienting and buried the player's
--- character model. Now you start in explore mode and can press C (or
--- tap the camera toggle button) to swap to overview when you want to
--- place towers. The camera lock is released either way so the toggle
--- works once the player is inside the arena.
+-- Drops the player into the top-down aerial overview when they enter
+-- a realm. This avoids looking at void while Parts stream in (the
+-- overview is high enough that the ground pops in quickly) and lets
+-- the player immediately see the full map + path for tower placement.
+-- Press C or tap the camera toggle to swap to character follow.
 function Placement.enterArenaMode()
 	cinematicCFrame = nil
 	lerpStartCFrame = nil
 	cameraLocked = false
-	mode = "explore"
-	applyExploreCamera()
+	mode = "overview"
+	applyOverviewCamera()
 end
 
 function Placement.init()

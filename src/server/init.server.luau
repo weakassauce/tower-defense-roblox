@@ -177,9 +177,18 @@ lobbyData = Lobby.build(function(player, realmName)
 			ctx.gameState:equipGun("starter")
 		end
 	end
+	-- Wait for the arena's Parts to stream in around the spawn point
+	-- before teleporting. Without this, the player lands in the void
+	-- and falls through a map that hasn't loaded yet. Wrapped in pcall
+	-- because RequestStreamAroundAsync can error if the player leaves
+	-- mid-request.
+	local spawnCF = ctx.arena:getArenaSpawnCFrame()
+	pcall(function()
+		player:RequestStreamAroundAsync(spawnCF.Position, 5)
+	end)
 	local char = player.Character
 	if char then
-		char:PivotTo(ctx.arena:getArenaSpawnCFrame())
+		char:PivotTo(spawnCF)
 	end
 	-- Fire EnterRealm with the slot offset so the client can rebase its
 	-- placement ghost + overview camera to the player's arena position.
@@ -431,11 +440,13 @@ end
 local function hookCharacterRespawn(ctx: PlayerContext)
 	ctx.player.CharacterAdded:Connect(function(char)
 		task.wait()
-		if ctx.inArena then
-			char:PivotTo(ctx.arena:getArenaSpawnCFrame())
-		else
-			char:PivotTo(lobbyData.spawnCFrame)
-		end
+		local targetCF = if ctx.inArena
+			then ctx.arena:getArenaSpawnCFrame()
+			else lobbyData.spawnCFrame
+		pcall(function()
+			ctx.player:RequestStreamAroundAsync(targetCF.Position, 5)
+		end)
+		char:PivotTo(targetCF)
 	end)
 end
 

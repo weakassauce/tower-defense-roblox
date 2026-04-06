@@ -30,7 +30,7 @@
     "Workspace": {
       "$className": "Workspace",
       "$properties": {
-        "StreamingEnabled": false
+        "StreamingEnabled": true
       }
     },
 
