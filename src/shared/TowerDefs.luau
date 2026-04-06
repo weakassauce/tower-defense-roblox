@@ -44,11 +44,11 @@ local TowerDefs: { [string]: TowerDef } = {
 	sniper = {
 		name = "Wizard Tower",
 		icon = "🔮",
-		cost = 80, -- 20.25 DPS x ~4
+		cost = 120, -- 12 DPS — high per-shot but slow, expensive investment
 
-		range = 11 * SCALE,
-		damage = 45,
-		fireRate = 0.45,
+		range = 9 * SCALE,
+		damage = 30,
+		fireRate = 0.4,
 		color = Color3.fromRGB(94, 53, 177),
 		accent = Color3.fromRGB(255, 241, 118),
 		projectileSpeed = 50 * SCALE,
