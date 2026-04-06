@@ -25,8 +25,139 @@ local Placement = require(script.Placement)
 local PlayerGun = require(script.PlayerGun)
 local Tutorial = require(script.Tutorial)
 
+local TweenService = game:GetService("TweenService")
+
 local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 print(string.format("[TowerDefense] Client booting for %s", player.Name))
+
+-- --- Loading screen ---
+-- Themed full-screen overlay with progress bar, shown by the server
+-- via Remotes.LoadingScreen before arena builds / teleports. Stays up
+-- until the server fires LoadingScreen(false) AND a minimum display
+-- time has elapsed so it doesn't flash.
+
+local loadingGui = Instance.new("ScreenGui")
+loadingGui.Name = "LoadingScreen"
+loadingGui.DisplayOrder = 999
+loadingGui.IgnoreGuiInset = true
+loadingGui.ResetOnSpawn = false
+loadingGui.Enabled = false
+loadingGui.Parent = playerGui
+
+local loadingBg = Instance.new("Frame")
+loadingBg.Name = "Bg"
+loadingBg.Size = UDim2.fromScale(1, 1)
+loadingBg.BackgroundColor3 = Color3.fromRGB(12, 8, 4)
+loadingBg.BorderSizePixel = 0
+loadingBg.Parent = loadingGui
+
+local loadingGradient = Instance.new("UIGradient")
+loadingGradient.Color = ColorSequence.new(Color3.fromRGB(24, 14, 6), Color3.fromRGB(8, 4, 2))
+loadingGradient.Rotation = 90
+loadingGradient.Parent = loadingBg
+
+local loadingTitle = Instance.new("TextLabel")
+loadingTitle.Name = "Title"
+loadingTitle.Size = UDim2.new(1, 0, 0, 60)
+loadingTitle.Position = UDim2.new(0, 0, 0.5, -80)
+loadingTitle.BackgroundTransparency = 1
+loadingTitle.Text = "REALM DEFENSE"
+loadingTitle.Font = Enum.Font.GothamBlack
+loadingTitle.TextSize = 48
+loadingTitle.TextColor3 = Color3.fromRGB(255, 210, 120)
+loadingTitle.TextStrokeColor3 = Color3.fromRGB(40, 20, 0)
+loadingTitle.TextStrokeTransparency = 0
+loadingTitle.Parent = loadingBg
+
+local loadingSub = Instance.new("TextLabel")
+loadingSub.Name = "Sub"
+loadingSub.Size = UDim2.new(1, 0, 0, 30)
+loadingSub.Position = UDim2.new(0, 0, 0.5, -15)
+loadingSub.BackgroundTransparency = 1
+loadingSub.Text = "Loading..."
+loadingSub.Font = Enum.Font.GothamMedium
+loadingSub.TextSize = 20
+loadingSub.TextColor3 = Color3.fromRGB(220, 200, 170)
+loadingSub.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+loadingSub.TextStrokeTransparency = 0.3
+loadingSub.Parent = loadingBg
+
+local barBg = Instance.new("Frame")
+barBg.Name = "BarBg"
+barBg.Size = UDim2.new(0.4, 0, 0, 12)
+barBg.AnchorPoint = Vector2.new(0.5, 0)
+barBg.Position = UDim2.new(0.5, 0, 0.5, 30)
+barBg.BackgroundColor3 = Color3.fromRGB(30, 20, 10)
+barBg.BorderSizePixel = 0
+barBg.Parent = loadingBg
+
+local barBgCorner = Instance.new("UICorner")
+barBgCorner.CornerRadius = UDim.new(0, 6)
+barBgCorner.Parent = barBg
+
+local barBgStroke = Instance.new("UIStroke")
+barBgStroke.Color = Color3.fromRGB(160, 120, 60)
+barBgStroke.Thickness = 2
+barBgStroke.Parent = barBg
+
+local barFill = Instance.new("Frame")
+barFill.Name = "Fill"
+barFill.Size = UDim2.fromScale(0, 1)
+barFill.BackgroundColor3 = Color3.fromRGB(255, 190, 80)
+barFill.BorderSizePixel = 0
+barFill.Parent = barBg
+
+local barFillCorner = Instance.new("UICorner")
+barFillCorner.CornerRadius = UDim.new(0, 6)
+barFillCorner.Parent = barFill
+
+local barFillGradient = Instance.new("UIGradient")
+barFillGradient.Color = ColorSequence.new(Color3.fromRGB(255, 200, 100), Color3.fromRGB(220, 140, 40))
+barFillGradient.Parent = barFill
+
+local function showLoadingScreen(realmDisplayName: string?)
+	loadingSub.Text = if realmDisplayName
+		then "Entering " .. realmDisplayName .. "..."
+		else "Loading..."
+	barFill.Size = UDim2.fromScale(0, 1)
+	loadingGui.Enabled = true
+	-- Animate the bar from 0% → 90% over 3 seconds; the last 10% fills
+	-- when the server signals done. If the server is faster, the bar
+	-- jumps to 100% on dismiss.
+	local tweenInfo = TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	TweenService:Create(barFill, tweenInfo, { Size = UDim2.fromScale(0.9, 1) }):Play()
+end
+
+local function hideLoadingScreen()
+	-- Fill bar to 100% then fade out after a brief hold.
+	local fillTween = TweenService:Create(
+		barFill,
+		TweenInfo.new(0.3, Enum.EasingStyle.Quad),
+		{ Size = UDim2.fromScale(1, 1) }
+	)
+	fillTween:Play()
+	fillTween.Completed:Wait()
+	task.wait(0.3)
+	-- Fade the background out
+	local fadeTween = TweenService:Create(
+		loadingBg,
+		TweenInfo.new(0.5, Enum.EasingStyle.Quad),
+		{ BackgroundTransparency = 1 }
+	)
+	fadeTween:Play()
+	fadeTween.Completed:Wait()
+	loadingGui.Enabled = false
+	loadingBg.BackgroundTransparency = 0
+end
+
+Remotes.LoadingScreen.OnClientEvent:Connect(function(show, realmDisplayName)
+	if show then
+		showLoadingScreen(realmDisplayName)
+	else
+		hideLoadingScreen()
+	end
+end)
 
 -- Tutorial is shown once per session, starting in the lobby after the
 -- player clicks Play. It has a lobby phase (ground arrows to the defense

@@ -63,5 +63,8 @@ Remotes.CastleDestroyed = getOrMakeRemote("CastleDestroyed")
 Remotes.EnterRealm = getOrMakeRemote("EnterRealm")
 Remotes.GunFired = getOrMakeRemote("GunFired")
 Remotes.PremiumTowerUnlocked = getOrMakeRemote("PremiumTowerUnlocked")
+-- Server → Client: show/hide the realm loading screen.
+-- Fired with (true, realmDisplayName) to show, (false) to hide.
+Remotes.LoadingScreen = getOrMakeRemote("LoadingScreen")
 
 return Remotes
