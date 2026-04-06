@@ -174,13 +174,8 @@ lobbyData = Lobby.build(function(player, realmName)
 	end
 	ctx.inArena = true
 	applyArenaCameraLimit(player)
-	-- Auto-equip the starter gun (or any owned gun) whenever the player
-	-- enters an arena with nothing equipped.
-	if ctx.gameState:getEquippedGun() == nil then
-		if ctx.gameState:ownsGun("starter") then
-			ctx.gameState:equipGun("starter")
-		end
-	end
+	-- Player spawns unarmed. They can equip a gun manually from the
+	-- armory if they want to shoot.
 	local spawnCF = ctx.arena:getArenaSpawnCFrame()
 	pcall(function()
 		player:RequestStreamAroundAsync(spawnCF.Position, 5)
