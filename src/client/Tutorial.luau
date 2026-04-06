@@ -138,10 +138,43 @@ local function buildSteps(): { Step }
 			icon = "🎮",
 			text = cameraHint,
 		},
+		-- --- Shop explanation ---
+		{
+			kind = "click",
+			icon = "🛒",
+			text = tapOrClick .. " the armory button to browse and buy stronger guns!",
+			target = "ShopBtn",
+			conditionName = "shopOpened",
+		},
+		{
+			kind = "manual",
+			icon = "💰",
+			text = "The armory sells guns for gold. Better guns deal more damage and fire faster!",
+		},
+		-- --- Pickup + inventory explanation ---
+		{
+			kind = "manual",
+			icon = "✋",
+			text = if isMobile
+				then "Tap the green PICKUP button, then tap a placed tower to pick it up."
+				else "Use the green PICKUP button, then " .. tapOrClick:lower() .. " a placed tower to store it.",
+		},
+		{
+			kind = "click",
+			icon = "🎒",
+			text = tapOrClick .. " the backpack to open your inventory!",
+			target = "InventoryBtn",
+			conditionName = "inventoryOpened",
+		},
+		{
+			kind = "manual",
+			icon = "📦",
+			text = "Your inventory stores picked-up towers. Re-place them anywhere or sell them for gold!",
+		},
 		{
 			kind = "manual",
 			icon = "🌟",
-			text = "Nice! Survive more waves to unlock new realms with unique towers!",
+			text = "You're all set! Survive more waves to unlock new realms with unique towers!",
 		},
 	}
 end
