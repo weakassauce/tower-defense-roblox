@@ -133,7 +133,7 @@ function WaveController.update(self: WaveController, dt: number): number
 	-- Wave is complete when the spawn queue is empty and no enemies are left alive
 	if #self.spawnQueue == 0 and #self.enemyMgr:getAlive() == 0 then
 		self.gameState:setWaveActive(false)
-		local bonus = 25 + state.waveNum * 6
+		local bonus = 15 + state.waveNum * 3
 		self.gameState:addGold(bonus)
 		return bonus
 	end

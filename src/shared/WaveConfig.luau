@@ -77,8 +77,9 @@ function WaveConfig.get(realmName: string, waveNum: number): WaveConfig
 	local baseCount = math.floor((6 + waveNum * 2.2) * countMult)
 	local baseHP = (18 + waveNum * 12) * hpMult
 	local baseSpeed = (2.5 + math.min(waveNum * 0.15, 2.5)) * SPEED_SCALE
-	-- Base gold per kill scales stronger per wave (was 6 + wave/3 * 2).
-	local baseReward = 8 + waveNum * 1.4
+	-- Base gold per kill — tight economy so players have to plan tower
+	-- purchases carefully instead of snowballing off early kills.
+	local baseReward = 4 + waveNum * 0.8
 	-- Realm reward multiplier mirrors the tower cost multiplier: harder
 	-- realms pay out proportionally more gold so the player can grind
 	-- them for the next realm's more expensive towers and guns.
