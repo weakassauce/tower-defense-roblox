@@ -879,14 +879,14 @@ local function buildSurroundDefense(ctx: ThemeContext)
 	local ROCK_COLORS = { palette.rock, palette.rockDark, palette.wallDark }
 
 	-- Scattered trees in the mid-zone
-	for i = 1, 70 do
+	for i = 1, 35 do
 		local tx, tz = randomMidPoint(ctx, innerEdge, ringInnerEdge)
 		local scale = 0.85 + rng:NextNumber() * 0.7
 		spawnTree(ctx, vegetation, i, tx, tz, scale)
 	end
 
 	-- Bushes
-	for i = 1, 50 do
+	for i = 1, 25 do
 		local bx, bz = randomMidPoint(ctx, innerEdge, ringInnerEdge)
 		local s = 1.5 + rng:NextNumber() * 1.3
 		local bush = makePart(vegetation, "Bush_" .. i)
@@ -898,7 +898,7 @@ local function buildSurroundDefense(ctx: ThemeContext)
 	end
 
 	-- Rocks
-	for i = 1, 35 do
+	for i = 1, 18 do
 		local rx, rz = randomMidPoint(ctx, innerEdge, ringInnerEdge)
 		local sx = 1.4 + rng:NextNumber() * 2
 		local sy = 0.8 + rng:NextNumber() * 1.2
@@ -912,7 +912,7 @@ local function buildSurroundDefense(ctx: ThemeContext)
 	end
 
 	-- Dense outer tree ring
-	for i = 1, 240 do
+	for i = 1, 120 do
 		local tx, tz = randomRingPoint(ctx, ringInnerEdge, outerEdge)
 		local scale = 1.4 + rng:NextNumber() * 0.9
 		spawnTree(ctx, vegetation, 1000 + i, tx, tz, scale)
@@ -927,7 +927,7 @@ local function buildSurroundDefense(ctx: ThemeContext)
 	local ridgeOuterR = arenaHalf + 92
 	local RIDGE_COLORS = palette.ridge
 
-	for i = 1, 700 do
+	for i = 1, 300 do
 		local rx, rz, t = randomRidgePoint(ctx, ridgeInnerR, ridgeOuterR)
 		local heightBase = 6 + t * 85
 		local heightJitter = rng:NextNumber() * 55
@@ -944,7 +944,7 @@ local function buildSurroundDefense(ctx: ThemeContext)
 		wedge.Material = palette.rockMaterial
 	end
 
-	for i = 1, 300 do
+	for i = 1, 120 do
 		local rx, rz, t = randomRidgePoint(ctx, ridgeInnerR, ridgeOuterR)
 		local heightBase = 10 + t * 60
 		local heightJitter = rng:NextNumber() * 40
@@ -968,7 +968,7 @@ local function buildSurroundDefense(ctx: ThemeContext)
 
 	local mountainInnerEdge = arenaHalf + 110
 	local mountainOuterEdge = groundHalf - 25
-	for i = 1, 48 do
+	for i = 1, 24 do
 		local mx, mz = randomMountainPoint(ctx, mountainInnerEdge, mountainOuterEdge)
 		buildMountain(ctx, mountains, i, mx, mz)
 	end
@@ -999,7 +999,7 @@ local function buildSurroundFrost(ctx: ThemeContext)
 	end
 
 	-- Glacier slabs (low rectangular ice chunks, tilted slightly)
-	for i = 1, 45 do
+	for i = 1, 22 do
 		local bx, bz = randomMidPoint(ctx, innerEdge, ringInnerEdge)
 		local sx = 3 + rng:NextNumber() * 4
 		local sy = 1 + rng:NextNumber() * 1.6
@@ -1034,9 +1034,9 @@ local function buildSurroundFrost(ctx: ThemeContext)
 	end
 
 	-- Sparser outer frozen tree ring (half density of defense)
-	for i = 1, 110 do
+	for i = 1, 55 do
 		local tx, tz = randomRingPoint(ctx, ringInnerEdge, outerEdge)
-		local scale = 1.3 + rng:NextNumber() * 0.8
+		local scale = 1.6 + rng:NextNumber() * 1.0
 		spawnTree(ctx, vegetation, 1000 + i, tx, tz, scale)
 	end
 
@@ -1050,7 +1050,7 @@ local function buildSurroundFrost(ctx: ThemeContext)
 
 	local ridgeInnerR = arenaHalf - 8
 	local ridgeOuterR = arenaHalf + 92
-	for i = 1, 900 do
+	for i = 1, 350 do
 		local rx, rz, t = randomRidgePoint(ctx, ridgeInnerR, ridgeOuterR)
 		local heightBase = 8 + t * 95
 		local heightJitter = rng:NextNumber() * 45
@@ -1068,7 +1068,7 @@ local function buildSurroundFrost(ctx: ThemeContext)
 	end
 
 	-- Wider glacier slabs between the spikes for variety
-	for i = 1, 200 do
+	for i = 1, 80 do
 		local rx, rz, t = randomRidgePoint(ctx, ridgeInnerR, ridgeOuterR)
 		local width = 10 + rng:NextNumber() * 18
 		local depth = 10 + rng:NextNumber() * 18
@@ -1090,7 +1090,7 @@ local function buildSurroundFrost(ctx: ThemeContext)
 
 	local mountainInnerEdge = arenaHalf + 110
 	local mountainOuterEdge = groundHalf - 25
-	for i = 1, 48 do
+	for i = 1, 24 do
 		local mx, mz = randomMountainPoint(ctx, mountainInnerEdge, mountainOuterEdge)
 		buildMountain(ctx, mountains, i, mx, mz)
 	end
@@ -1212,7 +1212,7 @@ local function buildSurroundDesert(ctx: ThemeContext)
 		end
 	end
 
-	for i = 1, 500 do
+	for i = 1, 200 do
 		local dx, dz, t = randomDunePoint()
 		-- Height grows gently with distance but never tall enough to wall
 		-- off the view.
@@ -1269,8 +1269,8 @@ local function buildSurroundDesert(ctx: ThemeContext)
 	-- Inner front row: big cubic blocks flush against the arena edge.
 	-- Character eye level sits around y=5 so the minimum height here is
 	-- 14 studs, guaranteeing the horizon is hidden.
-	for i = 1, 320 do
-		local side = 14 + rng:NextNumber() * 10 -- 14-24
+	for i = 1, 140 do
+		local side = 16 + rng:NextNumber() * 12 -- bigger to compensate for fewer
 		local jx = 0.9 + rng:NextNumber() * 0.2
 		local jy = 0.9 + rng:NextNumber() * 0.35
 		local jz = 0.9 + rng:NextNumber() * 0.2
@@ -1289,8 +1289,8 @@ local function buildSurroundDesert(ctx: ThemeContext)
 
 	-- Middle row: even taller blocks behind the front row filling any
 	-- gaps and adding silhouette depth.
-	for i = 1, 260 do
-		local side = 18 + rng:NextNumber() * 14 -- 18-32
+	for i = 1, 110 do
+		local side = 22 + rng:NextNumber() * 16 -- bigger to compensate for fewer
 		local jx = 0.9 + rng:NextNumber() * 0.25
 		local jy = 0.9 + rng:NextNumber() * 0.4
 		local jz = 0.9 + rng:NextNumber() * 0.25
@@ -1309,7 +1309,7 @@ local function buildSurroundDesert(ctx: ThemeContext)
 
 	-- Back row: smaller chipped boulders just beyond the wall for a
 	-- natural scatter so the barrier doesn't end in a hard line.
-	for i = 1, 180 do
+	for i = 1, 80 do
 		local side = 6 + rng:NextNumber() * 8 -- 6-14
 		local bx, bz = randomPointInRing(arenaHalf + 28, arenaHalf + 50)
 		local chip = makePart(boulders, "BoulderBack_" .. i)
@@ -1343,15 +1343,15 @@ local function buildSurroundForest(ctx: ThemeContext)
 
 	local BUSH_COLORS = palette.canopy
 
-	-- Dense mid-zone trees
-	for i = 1, 110 do
+	-- Dense mid-zone trees (halved; bigger scale compensates)
+	for i = 1, 50 do
 		local tx, tz = randomMidPoint(ctx, innerEdge, ringInnerEdge)
-		local scale = 0.9 + rng:NextNumber() * 0.9
+		local scale = 1.1 + rng:NextNumber() * 1.0
 		spawnTree(ctx, vegetation, i, tx, tz, scale)
 	end
 
 	-- Undergrowth bushes and small rocks
-	for i = 1, 80 do
+	for i = 1, 35 do
 		local bx, bz = randomMidPoint(ctx, innerEdge, ringInnerEdge)
 		local s = 1.6 + rng:NextNumber() * 1.4
 		local bush = makePart(vegetation, "Bush_" .. i)
@@ -1362,7 +1362,7 @@ local function buildSurroundForest(ctx: ThemeContext)
 		bush.Material = palette.canopyMaterial
 	end
 
-	for i = 1, 30 do
+	for i = 1, 15 do
 		local rx, rz = randomMidPoint(ctx, innerEdge, ringInnerEdge)
 		local sx = 1.4 + rng:NextNumber() * 1.8
 		local sy = 0.6 + rng:NextNumber() * 1
@@ -1402,9 +1402,9 @@ local function buildSurroundForest(ctx: ThemeContext)
 	end
 
 	-- Ring 1 — at the arena edge (normal outer tree ring, denser)
-	for i = 1, 360 do
+	for i = 1, 150 do
 		local tx, tz = randomRingPoint(ctx, ringInnerEdge, outerEdge)
-		local scale = 1.3 + rng:NextNumber() * 0.8
+		local scale = 1.6 + rng:NextNumber() * 1.0
 		spawnTree(ctx, vegetation, 1000 + i, tx, tz, scale)
 	end
 
@@ -1415,9 +1415,9 @@ local function buildSurroundForest(ctx: ThemeContext)
 
 	local ridgeInnerR = arenaHalf - 8
 	local ridgeOuterR = arenaHalf + 92
-	for i = 1, 500 do
+	for i = 1, 180 do
 		local tx, tz, _t = randomRidgePoint(ctx, ridgeInnerR, ridgeOuterR)
-		local scale = 1.8 + rng:NextNumber() * 1.2
+		local scale = 2.2 + rng:NextNumber() * 1.4
 		spawnGiantTree(wall1, i, tx, tz, scale)
 	end
 
@@ -1428,9 +1428,9 @@ local function buildSurroundForest(ctx: ThemeContext)
 
 	local farInner = arenaHalf + 110
 	local farOuter = groundHalf - 25
-	for i = 1, 320 do
+	for i = 1, 120 do
 		local mx, mz = randomMountainPoint(ctx, farInner, farOuter)
-		local scale = 2.2 + rng:NextNumber() * 1.6
+		local scale = 2.8 + rng:NextNumber() * 1.8
 		spawnGiantTree(wall2, i, mx, mz, scale)
 	end
 end

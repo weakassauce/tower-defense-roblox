@@ -59,35 +59,43 @@ end
 -- Daytime preset used by the lobby, defense, frost, and desert realms.
 local function applyDayPreset()
 	clearSky()
-	Lighting.Ambient = Color3.fromRGB(60, 55, 45)
-	Lighting.OutdoorAmbient = Color3.fromRGB(110, 100, 85)
-	Lighting.Brightness = 2.2
+	Lighting.Ambient = Color3.fromRGB(75, 68, 55)
+	Lighting.OutdoorAmbient = Color3.fromRGB(130, 120, 100)
+	Lighting.Brightness = 2.4
 	Lighting.ClockTime = 14.5
-	Lighting.ExposureCompensation = 0.15
-	Lighting.FogColor = Color3.fromRGB(160, 150, 130)
+	Lighting.ExposureCompensation = 0.1
+	Lighting.FogColor = Color3.fromRGB(180, 170, 150)
 	Lighting.FogEnd = 100000
 
+	-- Lighter atmosphere: lower density reduces the GPU fill cost on
+	-- mobile while still providing a warm golden haze around the arena.
 	local atmosphere = ensureAtmosphere()
-	atmosphere.Density = 0.32
-	atmosphere.Offset = 0.1
-	atmosphere.Color = Color3.fromRGB(199, 170, 130)
-	atmosphere.Decay = Color3.fromRGB(106, 112, 125)
-	atmosphere.Glare = 0.6
-	atmosphere.Haze = 1.6
+	atmosphere.Density = 0.2
+	atmosphere.Offset = 0.15
+	atmosphere.Color = Color3.fromRGB(210, 185, 145)
+	atmosphere.Decay = Color3.fromRGB(115, 118, 130)
+	atmosphere.Glare = 0.35
+	atmosphere.Haze = 1.0
 
+	-- Smaller bloom is much cheaper on mobile GPUs and still gives that
+	-- soft glow on neon towers / projectiles.
 	local bloom = ensureBloom()
-	bloom.Intensity = 0.55
-	bloom.Size = 28
-	bloom.Threshold = 0.95
+	bloom.Intensity = 0.45
+	bloom.Size = 18
+	bloom.Threshold = 0.92
 
+	-- SunRays disabled — expensive full-screen pass with minimal visual
+	-- payoff in a top-down game. Saves ~2-3 FPS on low-end devices.
 	local sunRays = ensureSunRays()
-	sunRays.Intensity = 0.18
-	sunRays.Spread = 1
+	sunRays.Intensity = 0
+	sunRays.Spread = 0
 
+	-- Warmer, slightly more saturated color grading so the palette
+	-- looks richer without extra geometry or lights.
 	local colorCorrection = ensureColorCorrection()
-	colorCorrection.Saturation = 0.12
-	colorCorrection.Contrast = 0.08
-	colorCorrection.TintColor = Color3.fromRGB(255, 240, 220)
+	colorCorrection.Saturation = 0.18
+	colorCorrection.Contrast = 0.1
+	colorCorrection.TintColor = Color3.fromRGB(255, 245, 228)
 end
 
 -- Nighttime preset used by forest + space (the final 2 realms). The
@@ -116,19 +124,21 @@ local function applyNightPreset()
 	atmosphere.Glare = 0
 	atmosphere.Haze = 0.2
 
+	-- Tighter bloom for a moody glow without tanking mobile FPS.
 	local bloom = ensureBloom()
-	bloom.Intensity = 0.95
-	bloom.Size = 36
-	bloom.Threshold = 0.85
+	bloom.Intensity = 0.7
+	bloom.Size = 20
+	bloom.Threshold = 0.88
 
 	local sunRays = ensureSunRays()
 	sunRays.Intensity = 0
 	sunRays.Spread = 0
 
+	-- Cool blue tint so night realms feel distinctly different from day.
 	local colorCorrection = ensureColorCorrection()
-	colorCorrection.Saturation = 0.05
-	colorCorrection.Contrast = 0.1
-	colorCorrection.TintColor = Color3.fromRGB(235, 238, 250)
+	colorCorrection.Saturation = 0.08
+	colorCorrection.Contrast = 0.12
+	colorCorrection.TintColor = Color3.fromRGB(220, 225, 255)
 end
 
 function LightingSetup.apply()
