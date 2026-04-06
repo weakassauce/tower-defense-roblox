@@ -200,6 +200,102 @@ print(string.format(
 	#RealmDefs.ORDER
 ))
 
+-- --- Per-player portal lock overlays ---
+-- The lobby's 3D portal Parts are shared — everyone sees the same
+-- geometry. To show per-player lock state, we create BillboardGuis in
+-- each player's PlayerGui with the portal shimmer as the Adornee. Only
+-- that player can see their own PlayerGui children, so each player
+-- sees locks that match their own progression.
+--
+-- `refreshPlayerPortalOverlays(ctx)` is called on join and whenever a
+-- wave completes that might have advanced their highest-wave count.
+-- It builds or destroys a lock overlay per portal based on whether
+-- the player has met the requirement.
+
+local function refreshPlayerPortalOverlays(ctx: PlayerContext)
+	local player = ctx.player
+	local playerGui = player:FindFirstChildOfClass("PlayerGui")
+	if not playerGui then
+		return
+	end
+	-- Container ScreenGui for this player's portal overlays. Using a
+	-- ScreenGui just as a holder — the BillboardGuis inside it use
+	-- Adornee to position themselves in 3D space.
+	local container = playerGui:FindFirstChild("PortalLockOverlays") :: ScreenGui?
+	if not container then
+		container = Instance.new("ScreenGui")
+		container.Name = "PortalLockOverlays"
+		container.ResetOnSpawn = false
+		container.Parent = playerGui
+	end
+
+	local highestWaves = ctx.gameState:getHighestWaves()
+	for _, refs in lobbyData.portals do
+		local realmName = refs.name
+		local unlocked = RealmDefs.isUnlocked(realmName, highestWaves)
+		local existing = container:FindFirstChild("Lock_" .. realmName) :: BillboardGui?
+
+		if unlocked then
+			-- Player has earned this portal — remove lock overlay if present
+			if existing then
+				existing:Destroy()
+			end
+		else
+			-- Player hasn't earned it — create or update the overlay
+			if not existing then
+				local overlay = Instance.new("BillboardGui")
+				overlay.Name = "Lock_" .. realmName
+				overlay.Size = UDim2.fromOffset(280, 110)
+				overlay.StudsOffset = Vector3.new(0, 0, 0)
+				overlay.AlwaysOnTop = true
+				overlay.LightInfluence = 0
+				overlay.Adornee = refs.shimmer
+				overlay.Parent = container
+
+				local lockedTitle = Instance.new("TextLabel")
+				lockedTitle.Name = "LockedTitle"
+				lockedTitle.Size = UDim2.fromScale(1, 0.38)
+				lockedTitle.Position = UDim2.fromScale(0, 0)
+				lockedTitle.BackgroundTransparency = 1
+				lockedTitle.Text = "LOCKED"
+				lockedTitle.Font = Enum.Font.GothamBlack
+				lockedTitle.TextSize = 28
+				lockedTitle.TextColor3 = Color3.fromRGB(255, 215, 100)
+				lockedTitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+				lockedTitle.TextStrokeTransparency = 0
+				lockedTitle.Parent = overlay
+
+				local reqLabel = Instance.new("TextLabel")
+				reqLabel.Name = "RequirementText"
+				reqLabel.Size = UDim2.fromScale(1, 0.62)
+				reqLabel.Position = UDim2.fromScale(0, 0.38)
+				reqLabel.BackgroundTransparency = 1
+				reqLabel.Font = Enum.Font.GothamBold
+				reqLabel.TextSize = 18
+				reqLabel.TextColor3 = Color3.fromRGB(255, 240, 200)
+				reqLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+				reqLabel.TextStrokeTransparency = 0
+				reqLabel.TextWrapped = true
+				reqLabel.Parent = overlay
+
+				-- Build requirement text
+				local def = RealmDefs.get(realmName)
+				if def.unlockRequirement then
+					local req = def.unlockRequirement
+					local reqDef = RealmDefs.get(req.realm)
+					reqLabel.Text = string.format(
+						"[ REACH WAVE %d IN %s ]",
+						req.wave,
+						string.upper(reqDef.displayName)
+					)
+				else
+					reqLabel.Text = "[ LOCKED ]"
+				end
+			end
+		end
+	end
+end
+
 -- --- Premium game-pass ownership (per player) ---
 local function ownsPremiumTower(ctx: PlayerContext): boolean
 	if ctx.gameState:isAdmin() then
@@ -357,8 +453,10 @@ local function onPlayerAdded(player: Player)
 		ownsPremiumTower(ctx)
 	end)
 
-	-- Initial state push. Wait a moment for the client to subscribe.
+	-- Initial state push. Wait a moment for the client to subscribe
+	-- and for PlayerGui to exist so lock overlays can be parented.
 	task.wait(0.5)
+	refreshPlayerPortalOverlays(ctx)
 	broadcastToPlayer(ctx)
 end
 
@@ -435,6 +533,7 @@ Remotes.UnlockAdmin.OnServerEvent:Connect(function(player, code)
 	end
 	ctx.gameState:setAdmin(keys)
 	ctx.gameState:unlockAllRealms(RealmDefs.ORDER)
+	refreshPlayerPortalOverlays(ctx)
 	ctx.premiumOwned = true
 	Remotes.PremiumTowerUnlocked:FireClient(player)
 	broadcastToPlayer(ctx)
@@ -908,7 +1007,11 @@ RunService.Heartbeat:Connect(function(dt)
 			stateChanged = true
 			Remotes.WaveComplete:FireClient(ctx.player, bonus)
 			local s = ctx.gameState:get()
-			ctx.gameState:updateHighestWave(s.realm, s.waveNum)
+			if ctx.gameState:updateHighestWave(s.realm, s.waveNum) then
+				-- New personal best — refresh this player's lock overlays
+				-- so any newly unlocked portal immediately clears its lock.
+				refreshPlayerPortalOverlays(ctx)
+			end
 		end
 
 		enemyMgr:cleanup()
