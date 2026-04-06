@@ -413,6 +413,10 @@ function Placement.init()
 					else
 						Remotes.PlaceTower:FireServer(gx, gy, sel.towerType)
 					end
+					-- Auto-deselect after placing so the gun comes back out
+					-- and the player can immediately shoot. They can always
+					-- re-select a tower from the panel to place another.
+					Hud.clearSelection()
 				end
 				return
 			end

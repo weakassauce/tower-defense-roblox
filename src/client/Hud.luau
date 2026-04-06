@@ -545,10 +545,10 @@ local function buildInventory(parent: Instance)
 	inventoryBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
 	inventoryBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(1))
 	inventoryBtn.TextSize = 36
-	inventoryBtn.BackgroundColor3 = COLOR_BG_DARK
-	inventoryBtn.BackgroundTransparency = 0.1
+	inventoryBtn.BackgroundColor3 = Color3.fromRGB(50, 35, 15)
+	inventoryBtn.BackgroundTransparency = 0
 	addCorner(inventoryBtn, 12)
-	addStroke(inventoryBtn, COLOR_ACCENT, 2)
+	addStroke(inventoryBtn, Color3.fromRGB(230, 170, 60), 2)
 
 	local badge = Instance.new("Frame")
 	badge.Name = "Count"
@@ -622,10 +622,10 @@ local function buildSideButtons(parent: Instance)
 	returnBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
 	returnBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(2))
 	returnBtn.TextSize = 32
-	returnBtn.BackgroundColor3 = COLOR_BG_DARK
-	returnBtn.BackgroundTransparency = 0.1
+	returnBtn.BackgroundColor3 = Color3.fromRGB(20, 35, 55)
+	returnBtn.BackgroundTransparency = 0
 	addCorner(returnBtn, 12)
-	addStroke(returnBtn, COLOR_ACCENT, 2)
+	addStroke(returnBtn, Color3.fromRGB(80, 160, 255), 2)
 
 	local returnTip = makeTextLabel(returnBtn, "Tip", "LOBBY", 10)
 	returnTip.Font = Enum.Font.GothamBold
@@ -644,10 +644,10 @@ local function buildSideButtons(parent: Instance)
 	cameraBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
 	cameraBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(3))
 	cameraBtn.TextSize = 32
-	cameraBtn.BackgroundColor3 = COLOR_BG_DARK
-	cameraBtn.BackgroundTransparency = 0.1
+	cameraBtn.BackgroundColor3 = Color3.fromRGB(15, 40, 45)
+	cameraBtn.BackgroundTransparency = 0
 	addCorner(cameraBtn, 12)
-	addStroke(cameraBtn, COLOR_ACCENT, 2)
+	addStroke(cameraBtn, Color3.fromRGB(60, 200, 200), 2)
 
 	local cameraTip = makeTextLabel(cameraBtn, "Tip", "VIEW", 10)
 	cameraTip.Font = Enum.Font.GothamBold
@@ -666,10 +666,10 @@ local function buildSideButtons(parent: Instance)
 	shopBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
 	shopBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(4))
 	shopBtn.TextSize = 32
-	shopBtn.BackgroundColor3 = COLOR_BG_DARK
-	shopBtn.BackgroundTransparency = 0.1
+	shopBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 10)
+	shopBtn.BackgroundTransparency = 0
 	addCorner(shopBtn, 12)
-	addStroke(shopBtn, COLOR_ACCENT, 2)
+	addStroke(shopBtn, Color3.fromRGB(255, 200, 50), 2)
 
 	local shopTip = makeTextLabel(shopBtn, "Tip", "SHOP", 10)
 	shopTip.Font = Enum.Font.GothamBold
@@ -694,10 +694,10 @@ local function buildSideButtons(parent: Instance)
 	gunToggleBtn = makeTextButton(parent, "GunToggleBtn", "")
 	gunToggleBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
 	gunToggleBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(5))
-	gunToggleBtn.BackgroundColor3 = COLOR_BG_DARK
-	gunToggleBtn.BackgroundTransparency = 0.1
+	gunToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 15, 15)
+	gunToggleBtn.BackgroundTransparency = 0
 	addCorner(gunToggleBtn, 12)
-	addStroke(gunToggleBtn, COLOR_ACCENT, 2)
+	addStroke(gunToggleBtn, Color3.fromRGB(230, 80, 70), 2)
 
 	gunToggleIcon = makeTextLabel(gunToggleBtn, "Icon", "🚫", 30)
 	gunToggleIcon.Size = UDim2.new(1, 0, 0, 44)
@@ -747,10 +747,10 @@ local function buildSideButtons(parent: Instance)
 	pickupBtn = makeTextButton(parent, "PickupBtn", "")
 	pickupBtn.Size = UDim2.fromOffset(SIDE_BTN_SIZE, SIDE_BTN_SIZE)
 	pickupBtn.Position = UDim2.new(1, SIDE_BTN_X, 0.5, sideButtonY(6))
-	pickupBtn.BackgroundColor3 = COLOR_BG_DARK
-	pickupBtn.BackgroundTransparency = 0.1
+	pickupBtn.BackgroundColor3 = Color3.fromRGB(15, 40, 20)
+	pickupBtn.BackgroundTransparency = 0
 	addCorner(pickupBtn, 12)
-	pickupBtnStroke = addStroke(pickupBtn, COLOR_ACCENT, 2)
+	pickupBtnStroke = addStroke(pickupBtn, Color3.fromRGB(80, 210, 100), 2)
 
 	pickupBtnIcon = makeTextLabel(pickupBtn, "Icon", "✋", 30)
 	pickupBtnIcon.Size = UDim2.new(1, 0, 0, 44)
@@ -2276,6 +2276,12 @@ end
 -- trigger for auto-holstering the player's gun while they're aiming
 -- at a button to click it.
 function Hud.isHoveringHudButton(): boolean
+	-- Also hide the gun whenever a shop panel is open — the player is
+	-- browsing, not fighting, and the gun model / crosshair gets in
+	-- the way of clicking shop cards.
+	if (shopPanel and shopPanel.Visible) or (robuxShopPanel and robuxShopPanel.Visible) then
+		return true
+	end
 	return hudHoverCount > 0
 end
 
