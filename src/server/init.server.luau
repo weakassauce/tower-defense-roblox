@@ -940,6 +940,16 @@ Remotes.Restart.OnServerEvent:Connect(function(player)
 		return
 	end
 	ctx.arena:resetCurrentRealm()
+	-- Wait for the rebuilt arena to stream in before letting the
+	-- character exist on it — same pattern as the initial portal entry.
+	local spawnCF = ctx.arena:getArenaSpawnCFrame()
+	pcall(function()
+		player:RequestStreamAroundAsync(spawnCF.Position, 5)
+	end)
+	local char = player.Character
+	if char then
+		char:PivotTo(spawnCF)
+	end
 	broadcastToPlayer(ctx)
 end)
 

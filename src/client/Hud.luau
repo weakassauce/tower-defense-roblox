@@ -137,7 +137,7 @@ end
 local screen: ScreenGui
 local sidePanel: Frame
 local towerPanel: Frame
-local controlsHint: Frame
+-- controlsHint removed
 local statsValues: { [string]: TextLabel } = {}
 local selectedIcon: TextLabel
 local selectedName: TextLabel
@@ -1460,29 +1460,6 @@ RunService.RenderStepped:Connect(function()
 	shopCurrentPreviewModel:PivotTo(CFrame.new(0, 0.5, 0) * CFrame.Angles(0, angle, 0))
 end)
 
--- --- Section: controls hint ---
-
-local function buildControlsHint(parent: Instance)
-	local hint = makeFrame(parent, "ControlsHint")
-	controlsHint = hint
-	hint.Size = UDim2.fromOffset(380, 60)
-	hint.Position = UDim2.new(1, -400, 1, -80)
-	hint.BackgroundTransparency = 0.35
-	addCorner(hint, 8)
-	addStroke(hint, COLOR_ACCENT, 1)
-
-	local text = makeTextLabel(hint, "Text", "", 13)
-	text.Size = UDim2.new(1, -20, 1, -16)
-	text.Position = UDim2.fromOffset(10, 8)
-	text.Font = Enum.Font.GothamMedium
-	text.RichText = true
-	text.TextWrapped = true
-	text.TextXAlignment = Enum.TextXAlignment.Left
-	text.TextYAlignment = Enum.TextYAlignment.Center
-	text.Text =
-		"<b>L-click</b> Place / Shoot  ·  <b>R-click</b> Pick up  ·  <b>C</b> Explore/Overview"
-end
-
 -- --- Section: home screen ---
 
 local function buildHomeScreen(parent: Instance)
@@ -1982,7 +1959,7 @@ function Hud.mount(onStarted: () -> ())
 	buildShopPanel(screen)
 	buildRobuxShopPanel(screen)
 	buildCrosshair(screen)
-	buildControlsHint(screen)
+	-- buildControlsHint removed — user doesn't want instructions overlay
 	buildGameOverScreen(screen)
 	buildHomeScreen(screen)
 
@@ -2362,9 +2339,7 @@ function Hud.setArenaHudVisible(v: boolean)
 	if inventoryPanel and not v then
 		inventoryPanel.Visible = false
 	end
-	if controlsHint then
-		controlsHint.Visible = v
-	end
+	-- controlsHint removed
 	if returnBtn then
 		returnBtn.Visible = v
 	end

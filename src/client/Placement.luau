@@ -246,7 +246,7 @@ function Placement.cinematicReturnToCharacter(duration: number)
 		lerpStartCFrame = nil
 		mode = "overview"
 		camera.CameraType = Enum.CameraType.Scriptable
-		camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
+		camera.CFrame = CFrame.lookAt(OVERVIEW_POS + arenaOffset, OVERVIEW_TARGET + arenaOffset)
 		return
 	end
 
@@ -304,17 +304,15 @@ function Placement.enterLobbyMode()
 	cameraLocked = true
 end
 
--- Drops the player into the top-down aerial overview when they enter
--- a realm. This avoids looking at void while Parts stream in (the
--- overview is high enough that the ground pops in quickly) and lets
--- the player immediately see the full map + path for tower placement.
--- Press C or tap the camera toggle to swap to character follow.
+-- Drops the player into character-follow mode when they enter a realm.
+-- Press C or tap the camera toggle to swap to the aerial overview for
+-- tower placement. Camera lock is released so the toggle works.
 function Placement.enterArenaMode()
 	cinematicCFrame = nil
 	lerpStartCFrame = nil
 	cameraLocked = false
-	mode = "overview"
-	applyOverviewCamera()
+	mode = "explore"
+	applyExploreCamera()
 end
 
 function Placement.init()
@@ -352,7 +350,7 @@ function Placement.init()
 			return
 		end
 		if mode == "overview" and camera.CameraType == Enum.CameraType.Scriptable then
-			camera.CFrame = CFrame.lookAt(OVERVIEW_POS, OVERVIEW_TARGET)
+			camera.CFrame = CFrame.lookAt(OVERVIEW_POS + arenaOffset, OVERVIEW_TARGET + arenaOffset)
 		end
 
 		if not enabled or Hud.isGameOver() then

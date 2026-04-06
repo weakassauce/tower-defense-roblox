@@ -4,6 +4,7 @@
 -- listens for server state updates / game events.
 
 local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
@@ -629,6 +630,22 @@ Remotes.EnterRealm.OnClientEvent:Connect(function(realm, arenaOffset)
 	-- ghost / overview camera / raycast lookups.
 	local offset = if typeof(arenaOffset) == "Vector3" then arenaOffset else Vector3.zero
 	Placement.setArenaOffset(offset)
+	-- Per-realm lighting. Forest and space use a night sky while keeping
+	-- the arena bright so enemies/towers remain visible. All other realms
+	-- + the lobby use daytime. game.Lighting is per-client so every
+	-- player sees the lighting for THEIR current realm only.
+	if realm == "forest" or realm == "space" then
+		Lighting.ClockTime = 0.1
+		Lighting.Brightness = 4
+		Lighting.Ambient = Color3.fromRGB(110, 105, 95)
+		Lighting.OutdoorAmbient = Color3.fromRGB(200, 190, 170)
+	else
+		Lighting.ClockTime = 14
+		Lighting.Brightness = 2
+		Lighting.Ambient = Color3.fromRGB(100, 100, 100)
+		Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+	end
+
 	if realm == "lobby" then
 		Placement.enterLobbyMode()
 		Hud.setArenaHudVisible(false)
