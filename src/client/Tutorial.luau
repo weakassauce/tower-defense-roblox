@@ -85,14 +85,19 @@ local function buildSteps(): { Step }
 		-- active enemies on the field to shoot at while the tutorial
 		-- is teaching the gun. Auto-advances on the first trigger pull.
 		{
+			kind = "manual",
+			icon = "🔫",
+			text = "Press E to draw or holster your gun.",
+		},
+		{
 			kind = "click",
 			icon = "🎯",
-			text = "Wave incoming! Tap enemies with your starter pistol to help your towers.",
+			text = "Wave incoming! Press E, then tap enemies with your pistol to help your towers.",
 			conditionName = "gunFired",
 		},
 		{
 			kind = "click",
-			icon = "🔫",
+			icon = "🛒",
 			text = "Open the armory to buy stronger guns with your gold.",
 			target = "ShopBtn",
 			conditionName = "shopOpened",
