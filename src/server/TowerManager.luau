@@ -1444,6 +1444,8 @@ local function fire(self: TowerManager, tower: Tower, target: EnemyManager.Enemy
 	proj.Material = Enum.Material.Neon
 	proj.Anchored = true
 	proj.CanCollide = false
+	proj.CastShadow = false
+	proj.CanQuery = false
 	proj.Position = Vector3.new(tower.x, tower.projectileY, tower.z)
 	proj.Parent = self.projectileFolder
 
@@ -1477,9 +1479,12 @@ local function updateProjectiles(self: TowerManager, dt: number)
 			local def = p.tower.def
 
 			if def.splash > 0 then
+				local splashSq = def.splash * def.splash
 				for _, enemy in enemyMgr:getAlive() do
-					local d = (enemy.root.Position - targetPos).Magnitude
-					if d <= def.splash then
+					local eDelta = enemy.root.Position - targetPos
+					local dSq = eDelta.X * eDelta.X + eDelta.Z * eDelta.Z
+					if dSq <= splashSq then
+						local d = math.sqrt(dSq)
 						local falloff = 1 - (d / def.splash) * 0.5
 						enemyMgr:damage(
 							enemy,
@@ -1509,22 +1514,28 @@ end
 
 function TowerManager.update(self: TowerManager, dt: number)
 	local enemyMgr = self.enemyMgr
+	-- Cache the alive list once per tick instead of rebuilding it for
+	-- every tower — O(enemies) once vs O(towers × enemies).
+	local aliveEnemies = enemyMgr:getAlive()
 	for _, tower in self.towers do
 		tower.fireCooldown -= dt
 		if tower.fireCooldown > 0 then
 			continue
 		end
 
-		-- Find the nearest enemy in range
+		-- Find the nearest enemy in range using squared distance to
+		-- skip the sqrt per comparison — measurable win with many
+		-- towers × enemies.
+		local rangeSq = tower.def.range * tower.def.range
 		local nearest: EnemyManager.Enemy? = nil
-		local nearestDist = math.huge
-		for _, enemy in enemyMgr:getAlive() do
+		local nearestDistSq = math.huge
+		for _, enemy in aliveEnemies do
 			local dx = enemy.root.Position.X - tower.x
 			local dz = enemy.root.Position.Z - tower.z
-			local d = math.sqrt(dx * dx + dz * dz)
-			if d <= tower.def.range and d < nearestDist then
+			local dSq = dx * dx + dz * dz
+			if dSq <= rangeSq and dSq < nearestDistSq then
 				nearest = enemy
-				nearestDist = d
+				nearestDistSq = dSq
 			end
 		end
 
