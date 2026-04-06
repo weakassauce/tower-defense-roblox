@@ -1321,9 +1321,12 @@ local function buildShopPanel(parent: Instance)
 	worldModel.Parent = viewport
 	shopViewportWorld = worldModel
 
+	-- Camera positioned for a tight side-profile view so the gun fills
+	-- the frame. FOV 30 zooms in; the model spins on Y so the player
+	-- sees every angle starting from the broadside.
 	local vpCamera = Instance.new("Camera")
-	vpCamera.FieldOfView = 45
-	vpCamera.CFrame = CFrame.lookAt(Vector3.new(3.8, 1.8, 3.8), Vector3.new(0, 0.5, -0.3))
+	vpCamera.FieldOfView = 30
+	vpCamera.CFrame = CFrame.lookAt(Vector3.new(3, 0.8, 0), Vector3.new(0, 0.3, 0))
 	vpCamera.Parent = viewport
 	viewport.CurrentCamera = vpCamera
 
@@ -1456,8 +1459,10 @@ RunService.RenderStepped:Connect(function()
 	if not shopCurrentPreviewModel or not shopCurrentPreviewModel.PrimaryPart then
 		return
 	end
-	local angle = tick() * 0.8
-	shopCurrentPreviewModel:PivotTo(CFrame.new(0, 0.5, 0) * CFrame.Angles(0, angle, 0))
+	-- Start rotated 90° so the initial view is the broadside profile,
+	-- then spin slowly so all angles are visible.
+	local angle = tick() * 0.6 + math.pi * 0.5
+	shopCurrentPreviewModel:PivotTo(CFrame.new(0, 0.2, 0) * CFrame.Angles(0, angle, 0))
 end)
 
 -- --- Section: home screen ---
