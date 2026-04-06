@@ -12,6 +12,8 @@
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 
 local Hud = require(script.Parent.Hud)
 
@@ -28,6 +30,23 @@ local COLOR_GROUND_ARROW = Color3.fromRGB(255, 210, 90)
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+
+-- Device detection — used to tailor tutorial text to the player's
+-- input method. "mobile" = touchscreen, "console" = gamepad,
+-- "pc" = keyboard + mouse.
+type DeviceKind = "pc" | "mobile" | "console"
+
+local function detectDevice(): DeviceKind
+	if GuiService:IsTenFootInterface() then
+		return "console"
+	end
+	if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+		return "mobile"
+	end
+	return "pc"
+end
+
+local deviceKind: DeviceKind = detectDevice()
 
 -- Step kinds:
 --   walkTo:    build ground-arrow chevron trail to a world target,
@@ -48,43 +67,76 @@ type Step = {
 -- --- Step list ---
 
 local function buildSteps(): { Step }
+	local isMobile = deviceKind == "mobile"
+	local isConsole = deviceKind == "console"
+
+	local tapOrClick = if isMobile then "Tap" elseif isConsole then "Press A on" else "Click"
+
+	local gunDrawText: string
+	local gunFireText: string
+	if isMobile then
+		gunDrawText = "Tap the gun button on the right to draw your weapon!"
+		gunFireText = "Shoot the enemies! Tap them to fire!"
+	elseif isConsole then
+		gunDrawText = "Press Y to draw your gun and fight alongside your towers!"
+		gunFireText = "Shoot the enemies! Aim and press RT to fire!"
+	else
+		gunDrawText = "Press E to draw your gun and fight alongside your towers!"
+		gunFireText = "Shoot the enemies! Press E then click to fire!"
+	end
+
+	local placeText = if isMobile
+		then "Tap a green grass tile to build it!"
+		else tapOrClick .. " a grass tile to place it!"
+
+	local cameraHint = if isMobile
+		then "Pinch to zoom, drag to look around."
+		elseif isConsole
+		then "Use the right stick to look around."
+		else "Press C to switch between aerial view and walking."
+
 	return {
 		{
 			kind = "walkTo",
 			icon = "🏰",
-			text = "Step into the REALM DEFENSE portal to begin!",
+			text = "Walk into the REALM DEFENSE portal to begin!",
 			conditionName = "enteredArena",
 		},
 		{
 			kind = "click",
 			icon = "🏹",
-			text = "Pick a tower from the bottom panel!",
+			text = tapOrClick .. " a tower from the bottom panel!",
 			target = "TowerPanel",
 			conditionName = "towerSelected",
 		},
 		{
 			kind = "click",
 			icon = "💥",
-			text = "Tap a grass tile to build it!",
+			text = placeText,
 			conditionName = "towerPlaced",
 		},
 		{
 			kind = "click",
 			icon = "⚔️",
-			text = "Hit the green button — here they come!",
+			text = tapOrClick .. " the green button — here they come!",
 			target = "WaveBtn",
 			conditionName = "waveStarted",
 		},
 		{
 			kind = "manual",
 			icon = "🔫",
-			text = "Press E to draw your gun and fight alongside your towers!",
+			text = gunDrawText,
 		},
 		{
 			kind = "click",
 			icon = "🎯",
-			text = "Shoot the enemies! Press E then click to fire!",
+			text = gunFireText,
 			conditionName = "gunFired",
+		},
+		{
+			kind = "manual",
+			icon = "🎮",
+			text = cameraHint,
 		},
 		{
 			kind = "manual",
