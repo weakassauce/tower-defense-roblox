@@ -96,86 +96,86 @@ local function buildSteps(): { Step }
 		else "Press C to switch between aerial view and walking."
 
 	return {
-		{
-			kind = "walkTo",
-			icon = "🏰",
-			text = "Walk into the REALM DEFENSE portal to begin!",
-			conditionName = "enteredArena",
-		},
-		{
-			kind = "click",
-			icon = "🏹",
-			text = tapOrClick .. " a tower from the bottom panel!",
-			target = "TowerPanel",
-			conditionName = "towerSelected",
-		},
-		{
-			kind = "click",
-			icon = "💥",
-			text = placeText,
-			conditionName = "towerPlaced",
-		},
-		{
-			kind = "click",
-			icon = "⚔️",
-			text = tapOrClick .. " the green button — here they come!",
-			target = "WaveBtn",
-			conditionName = "waveStarted",
-		},
-		{
-			kind = "manual",
-			icon = "🔫",
-			text = gunDrawText,
-		},
-		{
-			kind = "click",
-			icon = "🎯",
-			text = gunFireText,
-			conditionName = "gunFired",
-		},
+		-- === LOBBY ===
+		{ kind = "manual", icon = "👋", text = "Welcome to Realm Defense! Let's learn everything you need to know." },
+		{ kind = "manual", icon = "🌍", text = "This is the lobby. Each glowing portal leads to a different realm with unique enemies and towers." },
+		{ kind = "manual", icon = "🔒", text = "New realms unlock by reaching high waves. Start with Realm Defense and work your way up!" },
+		{ kind = "walkTo", icon = "🏰", text = "Walk into the REALM DEFENSE portal to begin your first battle!", conditionName = "enteredArena" },
+
+		-- === UNDERSTANDING THE MAP ===
+		{ kind = "manual", icon = "🗺️", text = "This is your arena! Enemies spawn on the left and march along the brown path toward your castle." },
+		{ kind = "manual", icon = "❤️", text = "Your castle has 25 HP. Every enemy that reaches it deals damage. If it hits 0, game over!" },
+		{ kind = "manual", icon = "🟩", text = "Green grass tiles are buildable spots. The brown path is where enemies walk — you can't build there." },
+		{ kind = "manual", icon = "💡", text = "Pro tip: build towers next to corners in the path. Enemies slow down at turns and get hit more!" },
+
+		-- === TOWERS ===
+		{ kind = "manual", icon = "📊", text = "Each tower type has different damage, range, fire rate, and special effects. Check the stats panel!" },
+		{ kind = "click", icon = "🏹", text = tapOrClick .. " the Archer Tower in the bottom panel. It's cheap and shoots fast — great for starting out!", target = "TowerPanel", conditionName = "towerSelected" },
+		{ kind = "click", icon = "💥", text = placeText .. " Place it right next to the path for best coverage!", conditionName = "towerPlaced" },
+		{ kind = "manual", icon = "💰", text = "Towers cost gold. You earn gold by killing enemies and completing waves. Budget carefully!" },
+		{ kind = "manual", icon = "🧊", text = "Try mixing tower types! Frost Spires slow enemies down while Archers and Cannons deal the damage." },
+
+		-- === COMBAT ===
+		{ kind = "click", icon = "⚔️", text = tapOrClick .. " the green START WAVE button to send in the first wave of goblins!", target = "WaveBtn", conditionName = "waveStarted" },
+		{ kind = "manual", icon = "👹", text = "There are 3 enemy types: small goblins (fast, weak), scouts (very fast), and trolls (slow, tanky)." },
+		{ kind = "manual", icon = "💵", text = "Each kill earns gold. Bigger enemies give more. You also get a bonus when the wave ends!" },
+
+		-- === YOUR GUN ===
+		{ kind = "manual", icon = "🔫", text = gunDrawText .. " You can fight alongside your towers!" },
+		{ kind = "click", icon = "🎯", text = gunFireText, conditionName = "gunFired" },
+		{ kind = "manual", icon = "💪", text = "Nice shot! Your gun deals extra damage on top of your towers. Great for finishing off tough enemies!" },
 		{
 			kind = "manual",
-			icon = "🎮",
-			text = cameraHint,
+			icon = "🛡️",
+			text = if isMobile
+				then "Your gun holsters automatically when you select a tower. Draw it again with the gun button!"
+				else "Your gun holsters when you select a tower. Press E again to draw it back!",
 		},
-		-- --- Shop explanation ---
-		{
-			kind = "click",
-			icon = "🛒",
-			text = tapOrClick .. " the armory button to browse and buy stronger guns!",
-			target = "ShopBtn",
-			conditionName = "shopOpened",
-		},
+
+		-- === CAMERA ===
+		{ kind = "manual", icon = "🎮", text = cameraHint },
 		{
 			kind = "manual",
-			icon = "💰",
-			text = "The armory sells guns for gold. Better guns deal more damage and fire faster!",
+			icon = "👁️",
+			text = if isMobile
+				then "Use the aerial view to see the full map when placing towers. Character view is for exploring!"
+				else "The aerial view (press C) is perfect for tower placement. Character view is for walking and shooting!",
 		},
-		-- --- Pickup + inventory explanation ---
+
+		-- === ARMORY / GUN SHOP ===
+		{ kind = "click", icon = "🛒", text = tapOrClick .. " the armory button (the gold gun icon on the right)!", target = "ShopBtn", conditionName = "shopOpened" },
+		{ kind = "manual", icon = "🔫", text = "The armory sells guns for gold. Better guns deal more damage, fire faster, and have wider spread!" },
+		{ kind = "manual", icon = "💲", text = "Each gun shows its stats: damage, fire rate, range, pellets, and spread. Compare before you buy!" },
+		{ kind = "manual", icon = "⭐", text = "Some premium guns cost Robux instead of gold. They're powerful but totally optional — gold guns work great!" },
+
+		-- === PICKUP + INVENTORY ===
 		{
 			kind = "manual",
 			icon = "✋",
 			text = if isMobile
-				then "Tap the green PICKUP button, then tap a placed tower to pick it up."
-				else "Use the green PICKUP button, then " .. tapOrClick:lower() .. " a placed tower to store it.",
+				then "See the green PICKUP button on the right? Tap it to enter pickup mode."
+				else "See the green PICKUP button on the right? " .. tapOrClick .. " it to enter pickup mode.",
 		},
-		{
-			kind = "click",
-			icon = "🎒",
-			text = tapOrClick .. " the backpack to open your inventory!",
-			target = "InventoryBtn",
-			conditionName = "inventoryOpened",
-		},
-		{
-			kind = "manual",
-			icon = "📦",
-			text = "Your inventory stores picked-up towers. Re-place them anywhere or sell them for gold!",
-		},
-		{
-			kind = "manual",
-			icon = "🌟",
-			text = "You're all set! Survive more waves to unlock new realms with unique towers!",
-		},
+		{ kind = "manual", icon = "🔄", text = "In pickup mode, tap any placed tower to pull it off the map and store it in your inventory!" },
+		{ kind = "manual", icon = "💡", text = "This is super useful! Rearrange towers mid-battle to cover where the enemies are pushing." },
+		{ kind = "click", icon = "🎒", text = tapOrClick .. " the backpack button to open your inventory!", target = "InventoryBtn", conditionName = "inventoryOpened" },
+		{ kind = "manual", icon = "📦", text = "Your inventory shows stored towers. Tap one to re-place it on any grass tile — totally free!" },
+		{ kind = "manual", icon = "💸", text = "Don't need a tower? Hit SELL in inventory to get 70% of the gold back. Great for upgrading!" },
+
+		-- === WAVE MANAGEMENT ===
+		{ kind = "manual", icon = "🔁", text = "See the AUTO WAVE toggle below the start button? Turn it on to skip waiting between waves!" },
+		{ kind = "manual", icon = "📈", text = "Waves get harder fast — more enemies, more HP, faster movement. Keep building and upgrading!" },
+
+		-- === ROBUX SHOP ===
+		{ kind = "manual", icon = "💎", text = tapOrClick .. " the purple diamond button for the Robux shop — premium towers, guns, and gold packs!" },
+
+		-- === REALMS + CLOSING ===
+		{ kind = "manual", icon = "🌍", text = "There are 5 realms: Defense, Frost Kingdom, Desert Wastes, Dark Forest, and the Void Frontier!" },
+		{ kind = "manual", icon = "⚡", text = "Each realm has 3 unique signature towers you can't get anywhere else. Later realms are much harder!" },
+		{ kind = "manual", icon = "💰", text = "Tower costs scale up per realm (3x each!) but so do kill rewards. Grind earlier realms to fund later ones!" },
+		{ kind = "manual", icon = "💾", text = "Your gold, guns, towers, and progress save automatically. Come back anytime!" },
+		{ kind = "manual", icon = "🏠", text = tapOrClick .. " the blue LOBBY button on the right to return and pick a different realm anytime." },
+		{ kind = "manual", icon = "🌟", text = "You're ready! Build towers, shoot enemies, survive the siege. Can you conquer the Void Frontier? Good luck!" },
 	}
 end
 
